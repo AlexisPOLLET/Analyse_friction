@@ -23,7 +23,7 @@ st.set_page_config(
 st.markdown("""
 <style>
     .metric-card {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         padding: 1.5rem;
         border-radius: 12px;
         color: white;
@@ -610,4 +610,317 @@ elif mode == "📈 Analyse de Tendances":
         
         if len(trend_df) >= 3:
             # Ajustement polynomial
-            st.markdown("#### 📊 Aj
+            st.markdown("#### 📊 Ajustement de Courbe et Prédiction")
+            
+            # Nettoyage des données pour la régression
+            clean_data = trend_df[[x_param, y_param]].dropna()
+            
+            if len(clean_data) >= 3:
+                x_data = clean_data[x_param].values
+                y_data = clean_data[y_param].values
+                
+                # Choix du type d'ajustement
+                fit_type = st.selectbox("Type d'ajustement:", [
+                    "Linéaire", 
+                    "Polynomial (degré 2)", 
+                    "Polynomial (degré 3)",
+                    "Exponentiel",
+                    "Logarithmique"
+                ])
+                
+                # Calcul de l'ajustement
+                x_fit = np.linspace(x_data.min(), x_data.max(), 100)
+                
+                if fit_type == "Linéaire":
+                    coeffs = np.polyfit(x_data, y_data, 1)
+                    y_fit = np.polyval(coeffs, x_fit)
+                    equation = f"y = {coeffs[0]:.4f}x + {coeffs[1]:.4f}"
+                    
+                elif "Polynomial" in fit_type:
+                    degree = int(fit_type.split("degré ")[1].split(")")[0])
+                    coeffs = np.polyfit(x_data, y_data, degree)
+                    y_fit = np.polyval(coeffs, x_fit)
+                    
+                    if degree == 2:
+                        equation = f"y = {coeffs[0]:.4f}x² + {coeffs[1]:.4f}x + {coeffs[2]:.4f}"
+                    else:
+                        equation = f"y = {coeffs[0]:.4f}x³ + {coeffs[1]:.4f}x² + {coeffs[2]:.4f}x + {coeffs[3]:.4f}"
+                
+                elif fit_type == "Exponentiel":
+                    # Ajustement exponentiel: y = a * exp(b * x)
+                    log_y = np.log(np.maximum(y_data, 1e-10))
+                    coeffs = np.polyfit(x_data, log_y, 1)
+                    a = np.exp(coeffs[1])
+                    b = coeffs[0]
+                    y_fit = a * np.exp(b * x_fit)
+                    equation = f"y = {a:.4f} * exp({b:.4f} * x)"
+                
+                elif fit_type == "Logarithmique":
+                    # Ajustement logarithmique: y = a * ln(x) + b
+                    log_x = np.log(np.maximum(x_data, 1e-10))
+                    coeffs = np.polyfit(log_x, y_data, 1)
+                    log_x_fit = np.log(np.maximum(x_fit, 1e-10))
+                    y_fit = coeffs[0] * log_x_fit + coeffs[1]
+                    equation = f"y = {coeffs[0]:.4f} * ln(x) + {coeffs[1]:.4f}"
+                
+                # Calcul du R²
+                y_pred_data = np.interp(x_data, x_fit, y_fit)
+                ss_res = np.sum((y_data - y_pred_data) ** 2)
+                ss_tot = np.sum((y_data - np.mean(y_data)) ** 2)
+                r_squared = 1 - (ss_res / ss_tot) if ss_tot != 0 else 0
+                
+                # Visualisation
+                fig_trend = go.Figure()
+                
+                # Points expérimentaux
+                fig_trend.add_trace(go.Scatter(
+                    x=x_data,
+                    y=y_data,
+                    mode='markers',
+                    name='Données expérimentales',
+                    marker=dict(size=10, color='red')
+                ))
+                
+                # Courbe d'ajustement
+                fig_trend.add_trace(go.Scatter(
+                    x=x_fit,
+                    y=y_fit,
+                    mode='lines',
+                    name=f'Ajustement {fit_type}',
+                    line=dict(color='blue', width=3)
+                ))
+                
+                fig_trend.update_layout(
+                    title=f"📈 Relation {y_param} vs {x_param}",
+                    xaxis_title=x_param,
+                    yaxis_title=y_param,
+                    annotations=[
+                        dict(
+                            x=0.02, y=0.98,
+                            xref="paper", yref="paper",
+                            text=f"<b>Équation:</b> {equation}<br><b>R² = {r_squared:.4f}</b>",
+                            showarrow=False,
+                            align="left",
+                            bgcolor="white",
+                            bordercolor="black",
+                            borderwidth=1
+                        )
+                    ]
+                )
+                
+                st.plotly_chart(fig_trend, use_container_width=True)
+                
+                # Évaluation de la qualité de l'ajustement
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    st.markdown(f"""
+                    <div class="metric-card">
+                        <h3>{r_squared:.4f}</h3>
+                        <p>Coefficient R²</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                with col2:
+                    rmse = np.sqrt(np.mean((y_data - y_pred_data) ** 2))
+                    st.markdown(f"""
+                    <div class="metric-card">  
+                        <h3>{rmse:.4f}</h3>
+                        <p>RMSE</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                with col3:
+                    mae = np.mean(np.abs(y_data - y_pred_data))
+                    st.markdown(f"""
+                    <div class="metric-card">
+                        <h3>{mae:.4f}</h3>
+                        <p>MAE</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                # Prédictions
+                st.markdown("#### 🔮 Prédictions")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    prediction_value = st.number_input(
+                        f"Valeur de {x_param} pour prédiction:",
+                        value=float(x_data.mean()),
+                        min_value=float(x_data.min() * 0.5),
+                        max_value=float(x_data.max() * 1.5)
+                    )
+                
+                with col2:
+                    # Calcul de la prédiction
+                    if fit_type == "Linéaire":
+                        pred_y = np.polyval(coeffs, prediction_value)
+                    elif "Polynomial" in fit_type:
+                        pred_y = np.polyval(coeffs, prediction_value)
+                    elif fit_type == "Exponentiel":
+                        pred_y = a * np.exp(b * prediction_value)
+                    elif fit_type == "Logarithmique":
+                        pred_y = coeffs[0] * np.log(max(prediction_value, 1e-10)) + coeffs[1]
+                    
+                    st.markdown(f"""
+                    <div class="analysis-card">
+                        <h4>🎯 Prédiction</h4>
+                        <p><strong>{x_param} = {prediction_value}</strong></p>
+                        <p><strong>{y_param} = {pred_y:.4f}</strong></p>
+                    </div>
+                    """, unsafe_allow_html=True)
+        
+        # Analyse des relations théoriques
+        st.markdown("### 🧠 Relations Théoriques Attendues")
+        
+        theoretical_relations = {
+            "Krr vs Humidité": {
+                "forme": "Krr = K_sec(1 + αw + βw²)",
+                "physique": "Effet linéaire et quadratique de l'humidité",
+                "littérature": "Van Wal (2017) - sols secs uniquement"
+            },
+            "μ_Roulement vs Humidité": {
+                "forme": "μ = μ_sec + γw·exp(-δw)",
+                "physique": "Augmentation initiale puis saturation",
+                "littérature": "Ponts capillaires - cohésion maximale ~10-15%"
+            },
+            "δ/R vs ρs/ρg": {
+                "forme": "δ/R = A(ρs/ρg)^n",
+                "physique": "Pénétration proportionnelle au ratio de densités",
+                "littérature": "Darbois Texier (2018) - n ≈ 0.75"
+            }
+        }
+        
+        for relation, info in theoretical_relations.items():
+            st.markdown(f"""
+            <div class="comparison-section">
+                <h4>📐 {relation}</h4>
+                <p><strong>Forme théorique:</strong> {info['forme']}</p>
+                <p><strong>Physique:</strong> {info['physique']}</p>
+                <p><strong>Référence:</strong> {info['littérature']}</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+# Section d'export global
+st.markdown("---")
+st.markdown("### 💾 Export et Sauvegarde Globale")
+
+if st.session_state.friction_experiments:
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        # Export de toutes les expériences
+        all_experiments = []
+        for exp_name, exp in st.session_state.friction_experiments.items():
+            row = {
+                'Expérience': exp_name,
+                'Date': exp['metadata']['date'],
+                'Humidité (%)': exp['metadata']['water_content'],
+                'Type Sphère': exp['metadata']['sphere_type']
+            }
+            row.update(exp['results'])
+            all_experiments.append(row)
+        
+        if all_experiments:
+            export_df = pd.DataFrame(all_experiments)
+            csv_data = export_df.to_csv(index=False)
+            st.download_button(
+                label="📥 Export complet (CSV)",
+                data=csv_data,
+                file_name="analyse_friction_complete.csv",
+                mime="text/csv"
+            )
+    
+    with col2:
+        # Nettoyage des données
+        if st.button("🧹 Nettoyer toutes les données"):
+            st.session_state.friction_experiments = {}
+            st.success("✅ Toutes les données ont été supprimées!")
+            st.rerun()
+    
+    with col3:
+        # Statistiques de la session
+        st.markdown(f"""
+        <div class="metric-card">
+            <h3>{len(st.session_state.friction_experiments)}</h3>
+            <p>Expériences sauvegardées</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+# Guide d'utilisation
+st.markdown("---")
+st.markdown("## 📚 Guide d'Utilisation Rapide")
+
+with st.expander("🎯 Format des fichiers CSV"):
+    st.markdown("""
+    **Structure attendue:**
+    ```csv
+    Parametre,Valeur
+    Krr,0.05375906313075665
+    Vitesse_Max_mm/s,2669.2493426183214
+    Distance_mm,369.02196089885706
+    μ_Cinétique,1.3163109285264338
+    μ_Roulement,1.2288222650005098
+    Efficacite_Energie_%,0.0
+    Force_Normale_mN,48.863349941400124
+    ```
+    
+    **Paramètres reconnus automatiquement:**
+    - `Krr`: Coefficient de résistance au roulement
+    - `Vitesse_Max_mm/s`: Vitesse maximale en mm/s
+    - `Distance_mm`: Distance parcourue en mm
+    - `Duree_s`: Durée de l'expérience en secondes
+    - `μ_*`: Coefficients de friction (Cinétique, Roulement, Énergétique)
+    - `Efficacite_Energie_%`: Efficacité énergétique en %
+    - `Force_Normale_mN`: Force normale en mN
+    """)
+
+with st.expander("🔬 Interprétation des résultats"):
+    st.markdown("""
+    **Coefficient Krr:**
+    - 0.03-0.05: Résistance faible (surface lisse)
+    - 0.05-0.07: Valeurs typiques littérature (Van Wal 2017)
+    - 0.07-0.10: Résistance élevée (effet humidité)
+    - >0.10: Résistance très élevée (substrat déformable)
+    
+    **Coefficients de friction:**
+    - μ_Cinétique: Friction pendant le mouvement
+    - μ_Roulement: Résistance spécifique au roulement
+    - μ_Énergétique: Bilan énergétique (peut être négatif)
+    
+    **Efficacité énergétique:**
+    - 0%: Énergie totalement dissipée
+    - 1-20%: Dissipation importante (substrat mou)
+    - >20%: Conservation partielle d'énergie
+    """)
+
+with st.expander("📊 Analyse comparative"):
+    st.markdown("""
+    **Tendances attendues avec l'humidité:**
+    1. **Krr augmente** avec l'humidité (cohésion capillaire)
+    2. **Optimum vers 10-15%** (ponts capillaires maximaux)
+    3. **Saturation à haute humidité** (25%+)
+    4. **Vitesse diminue** avec l'augmentation de Krr
+    5. **Efficacité énergétique diminue** (plus de dissipation)
+    
+    **Relations théoriques à vérifier:**
+    - Krr = K_sec(1 + αw + βw²)
+    - δ/R = A(ρs/ρg)^0.75
+    - φ_eff = φ_sec + γw·exp(-δw)
+    """)
+
+# Footer avec informations du projet
+st.markdown("---")
+st.markdown("""
+<div style="text-align: center; color: #666; background-color: #f8f9fa; padding: 1rem; border-radius: 10px;">
+    <h4>🔬 Projet de Recherche</h4>
+    <p><strong>"Rolling Resistance of Spheres on Wet Granular Material"</strong></p>
+    <p>Département des Sciences de la Terre Cosmique - Université d'Osaka</p>
+    <p><em>Innovation: Première étude de l'effet de l'humidité sur la résistance au roulement</em></p>
+    <hr>
+    <p>📊 <strong>Objectif:</strong> Quantifier l'effet de l'humidité sur la friction de roulement</p>
+    <p>🎯 <strong>Innovation:</strong> Extension des modèles existants (sols secs) aux conditions humides</p>
+    <p>📈 <strong>Applications:</strong> Géotechnique, mécanique des sols, ingénierie</p>
+</div>
+""", unsafe_allow_html=True)
