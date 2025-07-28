@@ -317,40 +317,49 @@ if st.session_state.experiments_data:
                     x='Teneur_eau', 
                     y='Krr',
                     color='Type_sphère',
-                    size='Angle',
                     hover_data=['Expérience'],
                     title="🔍 Coefficient Krr vs Teneur en Eau",
                     labels={'Teneur_eau': 'Teneur en eau (%)', 'Krr': 'Coefficient Krr'}
                 )
                 
-                # Ajouter une ligne de tendance
-                if len(comp_df) >= 2:
-                    z = np.polyfit(comp_df['Teneur_eau'], comp_df['Krr'], 1)
-                    p = np.poly1d(z)
-                    x_trend = np.linspace(comp_df['Teneur_eau'].min(), comp_df['Teneur_eau'].max(), 100)
-                    fig_water.add_trace(go.Scatter(
-                        x=x_trend, 
-                        y=p(x_trend),
-                        mode='lines',
-                        name='Tendance',
-                        line=dict(dash='dash', color='red', width=2)
-                    ))
+                # Ajouter une ligne de tendance seulement s'il y a assez de données
+                valid_trend_data = comp_df.dropna(subset=['Teneur_eau', 'Krr'])
+                if len(valid_trend_data) >= 2:
+                    try:
+                        z = np.polyfit(valid_trend_data['Teneur_eau'], valid_trend_data['Krr'], 1)
+                        p = np.poly1d(z)
+                        x_trend = np.linspace(valid_trend_data['Teneur_eau'].min(), valid_trend_data['Teneur_eau'].max(), 100)
+                        fig_water.add_trace(go.Scatter(
+                            x=x_trend, 
+                            y=p(x_trend),
+                            mode='lines',
+                            name='Tendance',
+                            line=dict(dash='dash', color='red', width=2)
+                        ))
+                    except:
+                        pass  # Ignorer si la régression échoue
                 
                 st.plotly_chart(fig_water, use_container_width=True)
             
             with col2:
                 # Graphique de l'accélération vs teneur en eau
-                if 'max_acceleration_mms2' in comp_df.columns:
-                    fig_accel = px.bar(
-                        comp_df,
-                        x='Expérience',
-                        y='max_acceleration_mms2',
-                        color='Teneur_eau',
-                        title="🚀 Accélération Maximale par Expérience",
-                        labels={'max_acceleration_mms2': 'Accélération max (mm/s²)'}
-                    )
-                    fig_accel.update_xaxes(tickangle=45)
-                    st.plotly_chart(fig_accel, use_container_width=True)
+                if 'max_acceleration_mms2' in comp_df.columns and comp_df['max_acceleration_mms2'].notna().any():
+                    valid_accel = comp_df.dropna(subset=['max_acceleration_mms2'])
+                    if len(valid_accel) > 0:
+                        fig_accel = px.bar(
+                            valid_accel,
+                            x='Expérience',
+                            y='max_acceleration_mms2',
+                            color='Teneur_eau',
+                            title="🚀 Accélération Maximale par Expérience",
+                            labels={'max_acceleration_mms2': 'Accélération max (mm/s²)'}
+                        )
+                        fig_accel.update_xaxes(tickangle=45)
+                        st.plotly_chart(fig_accel, use_container_width=True)
+                    else:
+                        st.info("Données d'accélération non disponibles")
+                else:
+                    st.info("Données d'accélération non disponibles")
         
         # Analyse de l'effet de l'angle
         st.markdown("### 📐 Effet de l'Angle de Pente sur la Friction")
@@ -359,32 +368,57 @@ if st.session_state.experiments_data:
         
         with col1:
             if comp_df['Krr'].notna().any():
-                fig_angle = px.scatter(
-                    comp_df,
-                    x='Angle',
-                    y='Krr',
-                    color='Teneur_eau',
-                    size='max_velocity_mms',
-                    hover_data=['Expérience'],
-                    title="📈 Coefficient Krr vs Angle de Pente",
-                    labels={'Angle': 'Angle (°)', 'Krr': 'Coefficient Krr'}
-                )
-                st.plotly_chart(fig_angle, use_container_width=True)
+                # Filtrer les données valides pour éviter les erreurs
+                valid_data = comp_df.dropna(subset=['Angle', 'Krr'])
+                if len(valid_data) > 0:
+                    # Utiliser une taille fixe si max_velocity_mms n'est pas disponible
+                    size_col = 'max_velocity_mms' if 'max_velocity_mms' in valid_data.columns and valid_data['max_velocity_mms'].notna().any() else None
+                    
+                    fig_angle = px.scatter(
+                        valid_data,
+                        x='Angle',
+                        y='Krr',
+                        color='Teneur_eau',
+                        size=size_col,
+                        hover_data=['Expérience'],
+                        title="📈 Coefficient Krr vs Angle de Pente",
+                        labels={'Angle': 'Angle (°)', 'Krr': 'Coefficient Krr'}
+                    )
+                    st.plotly_chart(fig_angle, use_container_width=True)
+                else:
+                    st.warning("Pas assez de données valides pour l'analyse angle-Krr")
         
         with col2:
             # Vitesse finale vs angle
-            if 'vf_mms' in comp_df.columns:
-                fig_vel = px.scatter(
-                    comp_df,
-                    x='Angle',
-                    y='vf_mms',
-                    color='Teneur_eau',
-                    size='Krr',
-                    hover_data=['Expérience'],
-                    title="🏃 Vitesse Finale vs Angle",
-                    labels={'Angle': 'Angle (°)', 'vf_mms': 'Vitesse finale (mm/s)'}
-                )
-                st.plotly_chart(fig_vel, use_container_width=True)
+            if 'vf_mms' in comp_df.columns and comp_df['vf_mms'].notna().any():
+                valid_data_vel = comp_df.dropna(subset=['Angle', 'vf_mms'])
+                if len(valid_data_vel) > 0:
+                    # Utiliser une taille fixe si Krr n'est pas disponible
+                    size_col_vel = None
+                    if 'Krr' in valid_data_vel.columns and valid_data_vel['Krr'].notna().any():
+                        # Normaliser les valeurs de Krr pour la taille
+                        krr_values = valid_data_vel['Krr'].fillna(valid_data_vel['Krr'].mean())
+                        # Créer des tailles relatives
+                        size_values = ((krr_values - krr_values.min()) / (krr_values.max() - krr_values.min()) * 20 + 10) if krr_values.max() != krr_values.min() else [15] * len(krr_values)
+                        valid_data_vel = valid_data_vel.copy()
+                        valid_data_vel['size_normalized'] = size_values
+                        size_col_vel = 'size_normalized'
+                    
+                    fig_vel = px.scatter(
+                        valid_data_vel,
+                        x='Angle',
+                        y='vf_mms',
+                        color='Teneur_eau',
+                        size=size_col_vel,
+                        hover_data=['Expérience'],
+                        title="🏃 Vitesse Finale vs Angle",
+                        labels={'Angle': 'Angle (°)', 'vf_mms': 'Vitesse finale (mm/s)'}
+                    )
+                    st.plotly_chart(fig_vel, use_container_width=True)
+                else:
+                    st.warning("Pas assez de données valides pour l'analyse vitesse-angle")
+            else:
+                st.info("Données de vitesse finale non disponibles")
         
         # Métriques énergétiques
         st.markdown("### ⚡ Analyse Énergétique")
@@ -392,31 +426,55 @@ if st.session_state.experiments_data:
         col1, col2 = st.columns(2)
         
         with col1:
-            if 'energy_dissipated_mJ' in comp_df.columns:
-                fig_energy = px.bar(
-                    comp_df,
-                    x='Expérience',
-                    y='energy_dissipated_mJ',
-                    color='Teneur_eau',
-                    title="🔋 Énergie Dissipée par Expérience",
-                    labels={'energy_dissipated_mJ': 'Énergie dissipée (mJ)'}
-                )
-                fig_energy.update_xaxes(tickangle=45)
-                st.plotly_chart(fig_energy, use_container_width=True)
+            if 'energy_dissipated_mJ' in comp_df.columns and comp_df['energy_dissipated_mJ'].notna().any():
+                valid_energy = comp_df.dropna(subset=['energy_dissipated_mJ'])
+                if len(valid_energy) > 0:
+                    fig_energy = px.bar(
+                        valid_energy,
+                        x='Expérience',
+                        y='energy_dissipated_mJ',
+                        color='Teneur_eau',
+                        title="🔋 Énergie Dissipée par Expérience",
+                        labels={'energy_dissipated_mJ': 'Énergie dissipée (mJ)'}
+                    )
+                    fig_energy.update_xaxes(tickangle=45)
+                    st.plotly_chart(fig_energy, use_container_width=True)
+                else:
+                    st.info("Données d'énergie dissipée non disponibles")
+            else:
+                st.info("Données d'énergie dissipée non disponibles")
         
         with col2:
-            if 'energy_efficiency_percent' in comp_df.columns:
-                fig_eff = px.scatter(
-                    comp_df,
-                    x='Teneur_eau',
-                    y='energy_efficiency_percent',
-                    color='Angle',
-                    size='Krr',
-                    hover_data=['Expérience'],
-                    title="🎯 Efficacité Énergétique vs Teneur en Eau",
-                    labels={'Teneur_eau': 'Teneur en eau (%)', 'energy_efficiency_percent': 'Efficacité énergétique (%)'}
-                )
-                st.plotly_chart(fig_eff, use_container_width=True)
+            if 'energy_efficiency_percent' in comp_df.columns and comp_df['energy_efficiency_percent'].notna().any():
+                valid_efficiency = comp_df.dropna(subset=['energy_efficiency_percent', 'Teneur_eau'])
+                if len(valid_efficiency) > 0:
+                    # Gérer la taille du graphique
+                    size_col_eff = None
+                    if 'Krr' in valid_efficiency.columns and valid_efficiency['Krr'].notna().any():
+                        krr_vals = valid_efficiency['Krr'].fillna(valid_efficiency['Krr'].mean())
+                        if krr_vals.max() != krr_vals.min():
+                            size_vals_eff = (krr_vals - krr_vals.min()) / (krr_vals.max() - krr_vals.min()) * 20 + 10
+                        else:
+                            size_vals_eff = [15] * len(krr_vals)
+                        valid_efficiency = valid_efficiency.copy()
+                        valid_efficiency['size_krr'] = size_vals_eff
+                        size_col_eff = 'size_krr'
+                    
+                    fig_eff = px.scatter(
+                        valid_efficiency,
+                        x='Teneur_eau',
+                        y='energy_efficiency_percent',
+                        color='Angle',
+                        size=size_col_eff,
+                        hover_data=['Expérience'],
+                        title="🎯 Efficacité Énergétique vs Teneur en Eau",
+                        labels={'Teneur_eau': 'Teneur en eau (%)', 'energy_efficiency_percent': 'Efficacité énergétique (%)'}
+                    )
+                    st.plotly_chart(fig_eff, use_container_width=True)
+                else:
+                    st.info("Données d'efficacité énergétique non disponibles")
+            else:
+                st.info("Données d'efficacité énergétique non disponibles")
         
         # Tableau de comparaison détaillé
         st.markdown("### 📋 Tableau de Comparaison Détaillé")
@@ -453,66 +511,81 @@ if st.session_state.experiments_data:
         
         # Effet de la teneur en eau
         if len(comp_df) >= 2 and comp_df['Krr'].notna().sum() >= 2:
-            water_krr_corr = comp_df[['Teneur_eau', 'Krr']].corr().iloc[0, 1]
-            
-            if not pd.isna(water_krr_corr):
-                if water_krr_corr > 0.3:
-                    conclusions.append({
-                        'type': 'Effet de l\'humidité',
-                        'finding': 'AUGMENTATION de la friction avec l\'humidité',
-                        'correlation': f'{water_krr_corr:.3f}',
-                        'explanation': 'L\'augmentation de la teneur en eau crée des ponts capillaires qui augmentent la cohésion du substrat, augmentant ainsi la résistance au roulement.',
-                        'color': 'warning'
-                    })
-                elif water_krr_corr < -0.3:
-                    conclusions.append({
-                        'type': 'Effet de l\'humidité',
-                        'finding': 'DIMINUTION de la friction avec l\'humidité',
-                        'correlation': f'{water_krr_corr:.3f}',
-                        'explanation': 'L\'eau agit comme un lubrifiant, réduisant la friction entre la sphère et le substrat granulaire.',
-                        'color': 'success'
-                    })
-                else:
-                    conclusions.append({
-                        'type': 'Effet de l\'humidité',
-                        'finding': 'EFFET MINIMAL de l\'humidité sur la friction',
-                        'correlation': f'{water_krr_corr:.3f}',
-                        'explanation': 'Dans la gamme testée, la teneur en eau n\'a pas d\'effet significatif sur le coefficient de résistance au roulement.',
-                        'color': 'info'
-                    })
+            # Filtrer les données valides pour la corrélation
+            valid_corr_data = comp_df.dropna(subset=['Teneur_eau', 'Krr'])
+            if len(valid_corr_data) >= 2:
+                try:
+                    water_krr_corr = valid_corr_data[['Teneur_eau', 'Krr']].corr().iloc[0, 1]
+                    
+                    if not pd.isna(water_krr_corr):
+                        if water_krr_corr > 0.3:
+                            conclusions.append({
+                                'type': 'Effet de l\'humidité',
+                                'finding': 'AUGMENTATION de la friction avec l\'humidité',
+                                'correlation': f'{water_krr_corr:.3f}',
+                                'explanation': 'L\'augmentation de la teneur en eau crée des ponts capillaires qui augmentent la cohésion du substrat, augmentant ainsi la résistance au roulement.',
+                                'color': 'warning'
+                            })
+                        elif water_krr_corr < -0.3:
+                            conclusions.append({
+                                'type': 'Effet de l\'humidité',
+                                'finding': 'DIMINUTION de la friction avec l\'humidité',
+                                'correlation': f'{water_krr_corr:.3f}',
+                                'explanation': 'L\'eau agit comme un lubrifiant, réduisant la friction entre la sphère et le substrat granulaire.',
+                                'color': 'success'
+                            })
+                        else:
+                            conclusions.append({
+                                'type': 'Effet de l\'humidité',
+                                'finding': 'EFFET MINIMAL de l\'humidité sur la friction',
+                                'correlation': f'{water_krr_corr:.3f}',
+                                'explanation': 'Dans la gamme testée, la teneur en eau n\'a pas d\'effet significatif sur le coefficient de résistance au roulement.',
+                                'color': 'info'
+                            })
+                except Exception as e:
+                    st.warning(f"Erreur dans le calcul de corrélation humidité-Krr: {str(e)}")
         
         # Effet de l'angle
         if len(comp_df) >= 2 and comp_df['Krr'].notna().sum() >= 2:
-            angle_krr_corr = comp_df[['Angle', 'Krr']].corr().iloc[0, 1]
-            
-            if not pd.isna(angle_krr_corr):
-                if angle_krr_corr > 0.3:
-                    conclusions.append({
-                        'type': 'Effet de l\'angle',
-                        'finding': 'La friction AUGMENTE avec l\'angle de pente',
-                        'correlation': f'{angle_krr_corr:.3f}',
-                        'explanation': 'Les angles plus élevés peuvent causer une pénétration plus profonde de la sphère dans le substrat, augmentant la résistance.',
-                        'color': 'warning'
-                    })
-                elif angle_krr_corr < -0.3:
-                    conclusions.append({
-                        'type': 'Effet de l\'angle',
-                        'finding': 'La friction DIMINUE avec l\'angle de pente',
-                        'correlation': f'{angle_krr_corr:.3f}',
-                        'explanation': 'Les angles plus élevés facilitent le roulement en réduisant le contact avec le substrat.',
-                        'color': 'success'
-                    })
+            valid_angle_data = comp_df.dropna(subset=['Angle', 'Krr'])
+            if len(valid_angle_data) >= 2:
+                try:
+                    angle_krr_corr = valid_angle_data[['Angle', 'Krr']].corr().iloc[0, 1]
+                    
+                    if not pd.isna(angle_krr_corr):
+                        if angle_krr_corr > 0.3:
+                            conclusions.append({
+                                'type': 'Effet de l\'angle',
+                                'finding': 'La friction AUGMENTE avec l\'angle de pente',
+                                'correlation': f'{angle_krr_corr:.3f}',
+                                'explanation': 'Les angles plus élevés peuvent causer une pénétration plus profonde de la sphère dans le substrat, augmentant la résistance.',
+                                'color': 'warning'
+                            })
+                        elif angle_krr_corr < -0.3:
+                            conclusions.append({
+                                'type': 'Effet de l\'angle',
+                                'finding': 'La friction DIMINUE avec l\'angle de pente',
+                                'correlation': f'{angle_krr_corr:.3f}',
+                                'explanation': 'Les angles plus élevés facilitent le roulement en réduisant le contact avec le substrat.',
+                                'color': 'success'
+                            })
+                except Exception as e:
+                    st.warning(f"Erreur dans le calcul de corrélation angle-Krr: {str(e)}")
         
         # Analyse des performances par expérience
-        if 'max_acceleration_mms2' in comp_df.columns:
-            best_accel_exp = comp_df.loc[comp_df['max_acceleration_mms2'].idxmax()]
-            conclusions.append({
-                'type': 'Performance maximale',
-                'finding': f'Accélération maximale : {best_accel_exp["Expérience"]}',
-                'correlation': f'{best_accel_exp["max_acceleration_mms2"]:.2f} mm/s²',
-                'explanation': f'Conditions : {best_accel_exp["Teneur_eau"]}% d\'humidité, {best_accel_exp["Angle"]}° d\'angle',
-                'color': 'info'
-            })
+        if 'max_acceleration_mms2' in comp_df.columns and comp_df['max_acceleration_mms2'].notna().any():
+            try:
+                best_accel_idx = comp_df['max_acceleration_mms2'].idxmax()
+                best_accel_exp = comp_df.loc[best_accel_idx]
+                conclusions.append({
+                    'type': 'Performance maximale',
+                    'finding': f'Accélération maximale : {best_accel_exp["Expérience"]}',
+                    'correlation': f'{best_accel_exp["max_acceleration_mms2"]:.2f} mm/s²',
+                    'explanation': f'Conditions : {best_accel_exp["Teneur_eau"]}% d\'humidité, {best_accel_exp["Angle"]}° d\'angle',
+                    'color': 'info'
+                })
+            except Exception as e:
+                st.warning(f"Erreur dans l'analyse des performances: {str(e)}")
         
         # Affichage des conclusions
         for conclusion in conclusions:
@@ -538,41 +611,73 @@ if st.session_state.experiments_data:
         
         with col1:
             if comp_df['Krr'].notna().any():
-                avg_krr = comp_df['Krr'].mean()
-                st.markdown(f"""
-                <div class="metric-card">
-                    <h3>{avg_krr:.6f}</h3>
-                    <p>Krr Moyen</p>
-                </div>
-                """, unsafe_allow_html=True)
+                try:
+                    avg_krr = comp_df['Krr'].mean()
+                    st.markdown(f"""
+                    <div class="metric-card">
+                        <h3>{avg_krr:.6f}</h3>
+                        <p>Krr Moyen</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                except:
+                    st.markdown(f"""
+                    <div class="metric-card">
+                        <h3>N/A</h3>
+                        <p>Krr Moyen</p>
+                    </div>
+                    """, unsafe_allow_html=True)
         
         with col2:
-            if 'max_acceleration_mms2' in comp_df.columns:
-                max_accel = comp_df['max_acceleration_mms2'].max()
+            if 'max_acceleration_mms2' in comp_df.columns and comp_df['max_acceleration_mms2'].notna().any():
+                try:
+                    max_accel = comp_df['max_acceleration_mms2'].max()
+                    st.markdown(f"""
+                    <div class="metric-card">
+                        <h3>{max_accel:.1f}</h3>
+                        <p>Accél. Max (mm/s²)</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                except:
+                    st.markdown(f"""
+                    <div class="metric-card">
+                        <h3>N/A</h3>
+                        <p>Accél. Max (mm/s²)</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+        
+        with col3:
+            try:
+                water_range = comp_df['Teneur_eau'].max() - comp_df['Teneur_eau'].min()
                 st.markdown(f"""
                 <div class="metric-card">
-                    <h3>{max_accel:.1f}</h3>
-                    <p>Accél. Max (mm/s²)</p>
+                    <h3>{water_range:.1f}%</h3>
+                    <p>Gamme d'Humidité</p>
+                </div>
+                """, unsafe_allow_html=True)
+            except:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <h3>N/A</h3>
+                    <p>Gamme d'Humidité</p>
                 </div>
                 """, unsafe_allow_html=True)
         
-        with col3:
-            water_range = comp_df['Teneur_eau'].max() - comp_df['Teneur_eau'].min()
-            st.markdown(f"""
-            <div class="metric-card">
-                <h3>{water_range:.1f}%</h3>
-                <p>Gamme d'Humidité</p>
-            </div>
-            """, unsafe_allow_html=True)
-        
         with col4:
-            angle_range = comp_df['Angle'].max() - comp_df['Angle'].min()
-            st.markdown(f"""
-            <div class="metric-card">
-                <h3>{angle_range:.1f}°</h3>
-                <p>Gamme d'Angles</p>
-            </div>
-            """, unsafe_allow_html=True)
+            try:
+                angle_range = comp_df['Angle'].max() - comp_df['Angle'].min()
+                st.markdown(f"""
+                <div class="metric-card">
+                    <h3>{angle_range:.1f}°</h3>
+                    <p>Gamme d'Angles</p>
+                </div>
+                """, unsafe_allow_html=True)
+            except:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <h3>N/A</h3>
+                    <p>Gamme d'Angles</p>
+                </div>
+                """, unsafe_allow_html=True)
         
         # Export des résultats
         st.markdown("### 💾 Export des Résultats")
