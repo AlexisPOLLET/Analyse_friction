@@ -57,6 +57,13 @@ st.markdown("""
         color: white;
         margin: 0.5rem 0;
     }
+    .success-card {
+        background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+        padding: 1rem;
+        border-radius: 8px;
+        color: white;
+        margin: 0.5rem 0;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -324,7 +331,7 @@ def create_krr_plots(experiments_data):
         )
         
         # Ligne de tendance si assez de points
-        if len(df_plot) >= 3:
+        if len(df_plot) >= 2:
             z = np.polyfit(df_plot['Teneur_eau'], df_plot['Krr'], 1)
             p = np.poly1d(z)
             x_line = np.linspace(df_plot['Teneur_eau'].min(), df_plot['Teneur_eau'].max(), 100)
@@ -349,7 +356,7 @@ def create_krr_plots(experiments_data):
         )
         
         # Ligne de tendance
-        if len(df_plot) >= 3:
+        if len(df_plot) >= 2:
             z = np.polyfit(df_plot['Angle'], df_plot['Krr'], 1)
             p = np.poly1d(z)
             x_line = np.linspace(df_plot['Angle'].min(), df_plot['Angle'].max(), 100)
@@ -674,7 +681,17 @@ with col1:
             'avg_acceleration_mms2': 123.4,
             'max_resistance_force_mN': 2.457,
             'energy_efficiency_percent': 33.2,
-            'total_distance_mm': 45.8
+            'total_distance_mm': 45.8,
+            'time_series': {
+                'time': np.linspace(0, 0.5, 50),
+                'mu_kinetic': np.random.normal(0.012, 0.002, 50),
+                'mu_rolling': np.random.normal(0.008, 0.001, 50),
+                'krr_instantaneous': np.random.normal(0.045, 0.005, 50),
+                'velocity_mms': np.linspace(156, 89, 50),
+                'acceleration_mms2': np.random.normal(-130, 20, 50),
+                'resistance_force_mN': np.random.normal(2.4, 0.3, 50),
+                'energy_kinetic_mJ': np.linspace(12, 4, 50)
+            }
         }
         
         st.session_state.experiments_data['Test_10D_0W'] = {
@@ -701,7 +718,17 @@ with col2:
             'avg_acceleration_mms2': 156.9,
             'max_resistance_force_mN': 3.128,
             'energy_efficiency_percent': 29.8,
-            'total_distance_mm': 52.3
+            'total_distance_mm': 52.3,
+            'time_series': {
+                'time': np.linspace(0, 0.4, 50),
+                'mu_kinetic': np.random.normal(0.018, 0.003, 50),
+                'mu_rolling': np.random.normal(0.012, 0.002, 50),
+                'krr_instantaneous': np.random.normal(0.067, 0.008, 50),
+                'velocity_mms': np.linspace(189, 104, 50),
+                'acceleration_mms2': np.random.normal(-190, 30, 50),
+                'resistance_force_mN': np.random.normal(3.1, 0.4, 50),
+                'energy_kinetic_mJ': np.linspace(18, 5, 50)
+            }
         }
         
         st.session_state.experiments_data['Test_20D_5W'] = {
@@ -728,7 +755,17 @@ with col3:
             'avg_acceleration_mms2': 139.2,
             'max_resistance_force_mN': 2.785,
             'energy_efficiency_percent': 28.5,
-            'total_distance_mm': 38.9
+            'total_distance_mm': 38.9,
+            'time_series': {
+                'time': np.linspace(0, 0.45, 50),
+                'mu_kinetic': np.random.normal(0.022, 0.004, 50),
+                'mu_rolling': np.random.normal(0.015, 0.002, 50),
+                'krr_instantaneous': np.random.normal(0.078, 0.009, 50),
+                'velocity_mms': np.linspace(143, 76, 50),
+                'acceleration_mms2': np.random.normal(-148, 25, 50),
+                'resistance_force_mN': np.random.normal(2.8, 0.35, 50),
+                'energy_kinetic_mJ': np.linspace(10, 3, 50)
+            }
         }
         
         st.session_state.experiments_data['Test_15D_10W'] = {
@@ -1211,14 +1248,4 @@ else:
 st.markdown("---")
 st.markdown(f"""
 <div style="text-align: center; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 2rem; border-radius: 10px;">
-    <h2>🔬 Interface Complète - Friction + Krr + Gestion</h2>
-    <p><strong>🎯 TOUT-EN-UN :</strong> Graphiques Krr, Analyse Friction, Gestion Expériences, Corrélations</p>
-    <p><strong>📊 Statut :</strong> {len(st.session_state.experiments_data)} expérience(s) chargée(s)</p>
-    <p><strong>✅ Fonctionnalités actives :</strong> 
-    Graphiques Krr ✓ | Coefficients Friction ✓ | Tableau Gestion ✓ | 
-    {'Analyse Comparative ✓' if len(st.session_state.experiments_data) >= 2 else 'Analyse Comparative (2+ exp)'}
-    </p>
-    <p><em>🚀 Interface finale combinant TOUS tes besoins !</em></p>
-</div>
-""", unsafe_allow_html=True)
-            '
+    <h2>🔬 Interface Complète - Friction + Krr +
