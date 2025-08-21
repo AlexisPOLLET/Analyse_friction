@@ -1,4 +1,99 @@
-import streamlit as st
+# Instructions d'utilisation si pas d'expériences
+else:
+    st.markdown("""
+    ## 🚀 Instructions d'Utilisation - Analyseur Complet Friction + Trace
+    
+    ### 🔥 **Fonctionnalités Complètes :**
+    
+    #### **4 Coefficients de Friction + Analyse de Trace :**
+    1. **🔥 μ Cinétique** : Friction directe grain-sphère (`F_résistance / F_normale`)
+    2. **🎯 μ Rolling** : Résistance pure au roulement (`μ_cinétique - tan(angle)`)
+    3. **⚡ μ Énergétique** : Basé sur dissipation d'énergie (`E_dissipée / (F_normale × distance)`)
+    4. **📊 Krr Référence** : Coefficient traditionnel de résistance au roulement
+    5. **🛤️ Analyse de Trace Complète** : δ/R, volume, régime de pénétration, validation théorique
+    
+    #### **🛤️ Nouvelles Métriques de Trace :**
+    - **🎯 Ratio δ/R** : Pénétration normalisée (comparaison littérature)
+    - **📦 Volume de trace** : Déformation totale du substrat
+    - **⚖️ Rapport densités** : ρs/ρg (paramètre fondamental)
+    - **🏷️ Classification régime** : No-plowing / Micro-plowing / Deep-plowing
+    - **📊 Validation théorique** : Écart aux prédictions Darbois Texier et al.
+    - **⚡ Énergie de déformation** : Travail de pénétration + déformation substrat
+    
+    #### **📈 Graphiques Automatiques Enrichis :**
+    - **🔥 Coefficients vs Temps** : Évolution temporelle complète
+    - **🛤️ Comparaison δ/R vs Théorie** : Validation avec littérature
+    - **📐 Profil de trace** : Visualisation morphologique 3D
+    - **⚡ Énergies combinées** : Cinétique + déformation substrat
+    - **🔗 Corrélations avancées** : Relations friction-pénétration
+    
+    #### **🔍 Analyses Multi-Expériences Avancées :**
+    - **💧 Effet Humidité** : Sur friction ET pénétration
+    - **📐 Effet Angle** : Influence sur tous les paramètres
+    - **🏷️ Distribution régimes** : Classification automatique
+    - **📊 Matrices corrélation** : Relations inter-paramètres
+    - **🎯 Insights automatiques** : Détection patterns physiques
+    
+    ### 📋 **Protocole Expérimental Intégré :**
+    
+    #### **Pendant l'expérience :**
+    1. **📂 Enregistrement vidéo** à 250 fps
+    2. **🎯 Détection sphère** avec marqueurs colorés
+    3. **📏 Calibration automatique** depuis rayon détecté
+    
+    #### **Immédiatement après l'expérience :**
+    4. **📏 Mesure trace** (URGENT avant effacement !) :
+       - Profondeur maximale (mm)
+       - Largeur moyenne (3 points)
+       - Longueur totale visible
+    
+    #### **Analyse complète :**
+    5. **📊 Upload fichier CSV** + paramètres expérimentation
+    6. **🛤️ Saisie mesures trace** dans l'interface
+    7. **🔬 Analyses automatiques** : friction + pénétration + validation
+    
+    ### 💡 **Pour votre fichier `20D_0W_3.csv` :**
+    
+    - **📂 Upload fichier** : Détection automatique angle 20°
+    - **💧 Humidité** : 0% (sols secs)
+    - **🛤️ Mesures trace** : Profondeur ~1-3mm, largeur ~10-20mm
+    - **📊 Résultats attendus** :
+      - μ cinétique ~0.2-0.4
+      - δ/R ~0.03-0.08 (no-plowing)
+      - Validation théorique <25% écart
+      - Krr ~0.04-0.08
+    
+    ### 🎯 **Résultats Automatiques Complets :**
+    
+    ✅ **Dashboard friction** : 4 cartes coefficients  
+    ✅ **Dashboard trace** : δ/R, volume, régime, validation  
+    ✅ **Graphiques temporels** : Évolution tous paramètres  
+    ✅ **Comparaison théorie** : Darbois Texier, Van Wal validations  
+    ✅ **Analyse énergétique** : Cinétique + déformation combinées  
+    ✅ **Export complet** : CSV détaillé + rapport scientifique  
+    
+    ### 🔬 **Innovation Scientifique :**
+    
+    **Premier système au monde** combinant :
+    - Analyse friction temporelle grain-sphère 4 coefficients
+    - Validation théorique traces δ/R vs littérature  
+    - Effet humidité sur friction ET pénétration
+    - Classification automatique régimes Van Wal
+    - Énergies dissipation complètes (cinétique + déformation)
+    
+    **Applications directes pour votre recherche Osaka University !** 🎓
+    """)
+
+# Footer enrichi
+st.markdown("---")
+st.markdown("""
+<div style="text-align: center; color: #666; padding: 1rem;">
+    🎓 <strong>Analyseur Complet Friction + Trace Grain-Sphère</strong><br>
+    <em>🔥 Premier système intégrant friction temporelle ET analyse de pénétration</em><br>
+    📧 Département des Sciences de la Terre Cosmique - Université d'Osaka<br>
+    🔬 <strong>Fonctionnalités :</strong> 4 coefficients friction + analyse trace δ/R + validation théorique + énergies combinées
+</div>
+""", unsafe_allow_html=True)import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
@@ -2152,198 +2247,5 @@ st.markdown("""
     <em>🔥 Analyse complète des coefficients de friction temporels - Université d'Osaka</em><br>
     📧 Département des Sciences de la Terre Cosmique<br>
     🔬 <strong>Fonctionnalités :</strong> 4 coefficients de friction, graphiques temporels, analyses multi-expériences, export complet
-</div>
-""", unsafe_allow_html=True)
-
-# Instructions d'utilisation si pas d'expériences
-else:
-    st.markdown("""
-    ## 🚀 Instructions d'Utilisation - Analyseur Complet Friction + Trace
-    
-    ### 🔥 **Fonctionnalités Complètes :**
-    
-    #### **4 Coefficients de Friction + Analyse de Trace :**
-    1. **🔥 μ Cinétique** : Friction directe grain-sphère (`F_résistance / F_normale`)
-    2. **🎯 μ Rolling** : Résistance pure au roulement (`μ_cinétique - tan(angle)`)
-    3. **⚡ μ Énergétique** : Basé sur dissipation d'énergie (`E_dissipée / (F_normale × distance)`)
-    4. **📊 Krr Référence** : Coefficient traditionnel de résistance au roulement
-    5. **🛤️ Analyse de Trace Complète** : δ/R, volume, régime de pénétration, validation théorique
-    
-    #### **🛤️ Nouvelles Métriques de Trace :**
-    - **🎯 Ratio δ/R** : Pénétration normalisée (comparaison littérature)
-    - **📦 Volume de trace** : Déformation totale du substrat
-    - **⚖️ Rapport densités** : ρs/ρg (paramètre fondamental)
-    - **🏷️ Classification régime** : No-plowing / Micro-plowing / Deep-plowing
-    - **📊 Validation théorique** : Écart aux prédictions Darbois Texier et al.
-    - **⚡ Énergie de déformation** : Travail de pénétration + déformation substrat
-    
-    #### **📈 Graphiques Automatiques Enrichis :**
-    - **🔥 Coefficients vs Temps** : Évolution temporelle complète
-    - **🛤️ Comparaison δ/R vs Théorie** : Validation avec littérature
-    - **📐 Profil de trace** : Visualisation morphologique 3D
-    - **⚡ Énergies combinées** : Cinétique + déformation substrat
-    - **🔗 Corrélations avancées** : Relations friction-pénétration
-    
-    #### **🔍 Analyses Multi-Expériences Avancées :**
-    - **💧 Effet Humidité** : Sur friction ET pénétration
-    - **📐 Effet Angle** : Influence sur tous les paramètres
-    - **🏷️ Distribution régimes** : Classification automatique
-    - **📊 Matrices corrélation** : Relations inter-paramètres
-    - **🎯 Insights automatiques** : Détection patterns physiques
-    
-    ### 📋 **Protocole Expérimental Intégré :**
-    
-    #### **Pendant l'expérience :**
-    1. **📂 Enregistrement vidéo** à 250 fps
-    2. **🎯 Détection sphère** avec marqueurs colorés
-    3. **📏 Calibration automatique** depuis rayon détecté
-    
-    #### **Immédiatement après l'expérience :**
-    4. **📏 Mesure trace** (URGENT avant effacement !) :
-       - Profondeur maximale (mm)
-       - Largeur moyenne (3 points)
-       - Longueur totale visible
-    
-    #### **Analyse complète :**
-    5. **📊 Upload fichier CSV** + paramètres expérimentation
-    6. **🛤️ Saisie mesures trace** dans l'interface
-    7. **🔬 Analyses automatiques** : friction + pénétration + validation
-    
-    ### 💡 **Pour votre fichier `20D_0W_3.csv` :**
-    
-    - **📂 Upload fichier** : Détection automatique angle 20°
-    - **💧 Humidité** : 0% (sols secs)
-    - **🛤️ Mesures trace** : Profondeur ~1-3mm, largeur ~10-20mm
-    - **📊 Résultats attendus** :
-      - μ cinétique ~0.2-0.4
-      - δ/R ~0.03-0.08 (no-plowing)
-      - Validation théorique <25% écart
-      - Krr ~0.04-0.08
-    
-    ### 🎯 **Résultats Automatiques Complets :**
-    
-    ✅ **Dashboard friction** : 4 cartes coefficients  
-    ✅ **Dashboard trace** : δ/R, volume, régime, validation  
-    ✅ **Graphiques temporels** : Évolution tous paramètres  
-    ✅ **Comparaison théorie** : Darbois Texier, Van Wal validations  
-    ✅ **Analyse énergétique** : Cinétique + déformation combinées  
-    ✅ **Export complet** : CSV détaillé + rapport scientifique  
-    
-    ### 🔬 **Innovation Scientifique :**
-    
-    **Premier système au monde** combinant :
-    - Analyse friction temporelle grain-sphère 4 coefficients
-    - Validation théorique traces δ/R vs littérature  
-    - Effet humidité sur friction ET pénétration
-    - Classification automatique régimes Van Wal
-    - Énergies dissipation complètes (cinétique + déformation)
-    
-    **Applications directes pour votre recherche Osaka University !** 🎓
-    """)
-
-# Footer enrichi
-st.markdown("---")
-st.markdown("""
-<div style="text-align: center; color: #666; padding: 1rem;">
-    🎓 <strong>Analyseur Complet Friction + Trace Grain-Sphère</strong><br>
-    <em>🔥 Premier système intégrant friction temporelle ET analyse de pénétration</em><br>
-    📧 Département des Sciences de la Terre Cosmique - Université d'Osaka<br>
-    🔬 <strong>Fonctionnalités :</strong> 4 coefficients friction + analyse trace δ/R + validation théorique + énergies combinées
-</div>
-""", unsafe_allow_html=True)
-    # Instructions d'utilisation si pas d'expériences
-else:
-    st.markdown("""
-    ## 🚀 Instructions d'Utilisation - Analyseur Complet Friction + Trace
-    
-    ### 🔥 **Fonctionnalités Complètes :**
-    
-    #### **4 Coefficients de Friction + Analyse de Trace :**
-    1. **🔥 μ Cinétique** : Friction directe grain-sphère (`F_résistance / F_normale`)
-    2. **🎯 μ Rolling** : Résistance pure au roulement (`μ_cinétique - tan(angle)`)
-    3. **⚡ μ Énergétique** : Basé sur dissipation d'énergie (`E_dissipée / (F_normale × distance)`)
-    4. **📊 Krr Référence** : Coefficient traditionnel de résistance au roulement
-    5. **🛤️ Analyse de Trace Complète** : δ/R, volume, régime de pénétration, validation théorique
-    
-    #### **🛤️ Nouvelles Métriques de Trace :**
-    - **🎯 Ratio δ/R** : Pénétration normalisée (comparaison littérature)
-    - **📦 Volume de trace** : Déformation totale du substrat
-    - **⚖️ Rapport densités** : ρs/ρg (paramètre fondamental)
-    - **🏷️ Classification régime** : No-plowing / Micro-plowing / Deep-plowing
-    - **📊 Validation théorique** : Écart aux prédictions Darbois Texier et al.
-    - **⚡ Énergie de déformation** : Travail de pénétration + déformation substrat
-    
-    #### **📈 Graphiques Automatiques Enrichis :**
-    - **🔥 Coefficients vs Temps** : Évolution temporelle complète
-    - **🛤️ Comparaison δ/R vs Théorie** : Validation avec littérature
-    - **📐 Profil de trace** : Visualisation morphologique 3D
-    - **⚡ Énergies combinées** : Cinétique + déformation substrat
-    - **🔗 Corrélations avancées** : Relations friction-pénétration
-    
-    #### **🔍 Analyses Multi-Expériences Avancées :**
-    - **💧 Effet Humidité** : Sur friction ET pénétration
-    - **📐 Effet Angle** : Influence sur tous les paramètres
-    - **🏷️ Distribution régimes** : Classification automatique
-    - **📊 Matrices corrélation** : Relations inter-paramètres
-    - **🎯 Insights automatiques** : Détection patterns physiques
-    
-    ### 📋 **Protocole Expérimental Intégré :**
-    
-    #### **Pendant l'expérience :**
-    1. **📂 Enregistrement vidéo** à 250 fps
-    2. **🎯 Détection sphère** avec marqueurs colorés
-    3. **📏 Calibration automatique** depuis rayon détecté
-    
-    #### **Immédiatement après l'expérience :**
-    4. **📏 Mesure trace** (URGENT avant effacement !) :
-       - Profondeur maximale (mm)
-       - Largeur moyenne (3 points)
-       - Longueur totale visible
-    
-    #### **Analyse complète :**
-    5. **📊 Upload fichier CSV** + paramètres expérimentation
-    6. **🛤️ Saisie mesures trace** dans l'interface
-    7. **🔬 Analyses automatiques** : friction + pénétration + validation
-    
-    ### 💡 **Pour votre fichier `20D_0W_3.csv` :**
-    
-    - **📂 Upload fichier** : Détection automatique angle 20°
-    - **💧 Humidité** : 0% (sols secs)
-    - **🛤️ Mesures trace** : Profondeur ~1-3mm, largeur ~10-20mm
-    - **📊 Résultats attendus** :
-      - μ cinétique ~0.2-0.4
-      - δ/R ~0.03-0.08 (no-plowing)
-      - Validation théorique <25% écart
-      - Krr ~0.04-0.08
-    
-    ### 🎯 **Résultats Automatiques Complets :**
-    
-    ✅ **Dashboard friction** : 4 cartes coefficients  
-    ✅ **Dashboard trace** : δ/R, volume, régime, validation  
-    ✅ **Graphiques temporels** : Évolution tous paramètres  
-    ✅ **Comparaison théorie** : Darbois Texier, Van Wal validations  
-    ✅ **Analyse énergétique** : Cinétique + déformation combinées  
-    ✅ **Export complet** : CSV détaillé + rapport scientifique  
-    
-    ### 🔬 **Innovation Scientifique :**
-    
-    **Premier système au monde** combinant :
-    - Analyse friction temporelle grain-sphère 4 coefficients
-    - Validation théorique traces δ/R vs littérature  
-    - Effet humidité sur friction ET pénétration
-    - Classification automatique régimes Van Wal
-    - Énergies dissipation complètes (cinétique + déformation)
-    
-    **Applications directes pour votre recherche Osaka University !** 🎓
-    """)
-
-# Footer enrichi
-st.markdown("---")
-st.markdown("""
-<div style="text-align: center; color: #666; padding: 1rem;">
-    🎓 <strong>Analyseur Complet Friction + Trace Grain-Sphère</strong><br>
-    <em>🔥 Premier système intégrant friction temporelle ET analyse de pénétration</em><br>
-    📧 Département des Sciences de la Terre Cosmique - Université d'Osaka<br>
-    🔬 <strong>Fonctionnalités :</strong> 4 coefficients friction + analyse trace δ/R + validation théorique + énergies combinées
 </div>
 """, unsafe_allow_html=True)
