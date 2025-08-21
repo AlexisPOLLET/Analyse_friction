@@ -815,10 +815,12 @@ def create_advanced_friction_plots(metrics, experiment_name="Expérience"):
     
     ts = metrics['time_series']
     
+    # === GRAPHIQUE 1: COEFFICIENTS DE FRICTION VS TEMPS ===
     st.markdown("#### 🔥 Coefficients de Friction vs Temps")
     
     fig_friction_time = go.Figure()
     
+    # μ Cinétique
     fig_friction_time.add_trace(go.Scatter(
         x=ts['time'], 
         y=ts['mu_kinetic'],
@@ -828,6 +830,7 @@ def create_advanced_friction_plots(metrics, experiment_name="Expérience"):
         hovertemplate='Temps: %{x:.3f}s<br>μ Cinétique: %{y:.4f}<extra></extra>'
     ))
     
+    # μ Rolling
     fig_friction_time.add_trace(go.Scatter(
         x=ts['time'], 
         y=ts['mu_rolling'],
@@ -837,6 +840,7 @@ def create_advanced_friction_plots(metrics, experiment_name="Expérience"):
         hovertemplate='Temps: %{x:.3f}s<br>μ Rolling: %{y:.4f}<extra></extra>'
     ))
     
+    # μ Énergétique
     fig_friction_time.add_trace(go.Scatter(
         x=ts['time'], 
         y=ts['mu_energetic'],
@@ -846,6 +850,7 @@ def create_advanced_friction_plots(metrics, experiment_name="Expérience"):
         hovertemplate='Temps: %{x:.3f}s<br>μ Énergétique: %{y:.4f}<extra></extra>'
     ))
     
+    # Krr instantané
     fig_friction_time.add_trace(go.Scatter(
         x=ts['time'], 
         y=ts['krr_instantaneous'],
@@ -864,6 +869,103 @@ def create_advanced_friction_plots(metrics, experiment_name="Expérience"):
     )
     
     st.plotly_chart(fig_friction_time, use_container_width=True)
+    
+    # === GRAPHIQUE 2: ANALYSE FORCES ===
+    st.markdown("#### ⚖️ Analyse des Forces")
+    
+    fig_forces = make_subplots(
+        rows=2, cols=2,
+        subplot_titles=('Forces vs Temps', 'Puissance Dissipée', 
+                       'Énergie Dissipée Cumulée', 'Corrélation Vitesse-Friction'),
+        specs=[[{"secondary_y": False}, {"secondary_y": False}],
+               [{"secondary_y": False}, {"secondary_y": False}]]
+    )
+    
+    # Forces
+    fig_forces.add_trace(
+        go.Scatter(x=ts['time'], y=ts['resistance_force_mN'], 
+                  mode='lines', name='F Résistance', line=dict(color='red')),
+        row=1, col=1
+    )
+    fig_forces.add_trace(
+        go.Scatter(x=ts['time'], y=ts['normal_force_mN'], 
+                  mode='lines', name='F Normale', line=dict(color='blue', dash='dash')),
+        row=1, col=1
+    )
+    fig_forces.add_trace(
+        go.Scatter(x=ts['time'], y=ts['tangential_force_mN'], 
+                  mode='lines', name='F Tangentielle', line=dict(color='green', dash='dash')),
+        row=1, col=1
+    )
+    
+    # Puissance dissipée
+    fig_forces.add_trace(
+        go.Scatter(x=ts['time'], y=ts['power_dissipated_mW'], 
+                  mode='lines', name='Puissance', line=dict(color='purple')),
+        row=1, col=2
+    )
+    
+    # Énergie dissipée cumulée
+    fig_forces.add_trace(
+        go.Scatter(x=ts['time'], y=ts['energy_dissipated_cumul_mJ'], 
+                  mode='lines', name='Énergie', line=dict(color='orange')),
+        row=2, col=1
+    )
+    
+    # Corrélation vitesse-friction
+    fig_forces.add_trace(
+        go.Scatter(x=ts['velocity_mms'], y=ts['mu_kinetic'], 
+                  mode='markers', name='V vs μ', marker=dict(color='red', size=4)),
+        row=2, col=2
+    )
+    
+    fig_forces.update_xaxes(title_text="Temps (s)", row=1, col=1)
+    fig_forces.update_xaxes(title_text="Temps (s)", row=1, col=2)
+    fig_forces.update_xaxes(title_text="Temps (s)", row=2, col=1)
+    fig_forces.update_xaxes(title_text="Vitesse (mm/s)", row=2, col=2)
+    
+    fig_forces.update_yaxes(title_text="Force (mN)", row=1, col=1)
+    fig_forces.update_yaxes(title_text="Puissance (mW)", row=1, col=2)
+    fig_forces.update_yaxes(title_text="Énergie (mJ)", row=2, col=1)
+    fig_forces.update_yaxes(title_text="μ Cinétique", row=2, col=2)
+    
+    fig_forces.update_layout(height=600, showlegend=False)
+    st.plotly_chart(fig_forces, use_container_width=True)
+    
+    # === GRAPHIQUE 3: HISTOGRAMMES DES COEFFICIENTS ===
+    st.markdown("#### 📊 Distribution des Coefficients de Friction")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        fig_hist_kinetic = px.histogram(
+            x=ts['mu_kinetic'], 
+            nbins=20,
+            title="Distribution μ Cinétique",
+            labels={'x': 'μ Cinétique', 'y': 'Fréquence'}
+        )
+        fig_hist_kinetic.update_layout(height=300)
+        st.plotly_chart(fig_hist_kinetic, use_container_width=True)
+    
+    with col2:
+        fig_hist_rolling = px.histogram(
+            x=ts['mu_rolling'], 
+            nbins=20,
+            title="Distribution μ Rolling",
+            labels={'x': 'μ Rolling', 'y': 'Fréquence'}
+        )
+        fig_hist_rolling.update_layout(height=300)
+        st.plotly_chart(fig_hist_rolling, use_container_width=True)
+    
+    with col3:
+        fig_hist_krr = px.histogram(
+            x=ts['krr_instantaneous'], 
+            nbins=20,
+            title="Distribution Krr",
+            labels={'x': 'Krr Instantané', 'y': 'Fréquence'}
+        )
+        fig_hist_krr.update_layout(height=300)
+        st.plotly_chart(fig_hist_krr, use_container_width=True)
 
 def create_friction_analysis_section(metrics, experiment_name):
     """Section complète d'analyse de friction"""
@@ -873,8 +975,45 @@ def create_friction_analysis_section(metrics, experiment_name):
     *Analyse complète des différents types de friction et de leurs évolutions temporelles*
     """)
     
+    # Cartes de résumé
     create_friction_summary_cards(metrics)
+    
+    # Graphiques avancés
     create_advanced_friction_plots(metrics, experiment_name)
+    
+    # Analyse statistique
+    st.markdown("#### 📈 Analyse Statistique des Coefficients")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        mu_std = safe_format_value(metrics.get('mu_kinetic_std'), "{:.4f}")
+        st.metric("Variabilité μ Cinétique", mu_std)
+        
+        trend = metrics.get('mu_kinetic_trend', 0)
+        trend_text = "↗️ Augmente" if trend > 0.001 else "↘️ Diminue" if trend < -0.001 else "→ Stable"
+        st.metric("Tendance temporelle", trend_text)
+    
+    with col2:
+        mu_rolling_std = safe_format_value(metrics.get('mu_rolling_std'), "{:.4f}")
+        st.metric("Variabilité μ Rolling", mu_rolling_std)
+        
+        rolling_trend = metrics.get('mu_rolling_trend', 0)
+        rolling_trend_text = "↗️ Augmente" if rolling_trend > 0.001 else "↘️ Diminue" if rolling_trend < -0.001 else "→ Stable"
+        st.metric("Tendance temporelle", rolling_trend_text)
+    
+    with col3:
+        corr = safe_format_value(metrics.get('correlation_velocity_friction'), "{:.3f}")
+        st.metric("Corrélation Vitesse-Friction", corr)
+        
+        corr_val = metrics.get('correlation_velocity_friction', 0)
+        if abs(corr_val) > 0.7:
+            corr_interp = "🔴 Forte"
+        elif abs(corr_val) > 0.3:
+            corr_interp = "🟡 Modérée"
+        else:
+            corr_interp = "🟢 Faible"
+        st.metric("Intensité corrélation", corr_interp)
 
 def calculate_friction_metrics_enhanced(df_valid, water_content, angle, sphere_type):
     """Version enrichie avec analyses de friction avancées"""
