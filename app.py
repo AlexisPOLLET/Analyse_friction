@@ -1,4 +1,647 @@
-valid_velocities = comp_df.dropna(subset=['v0_mms', 'vf_mms'])
+import streamlit as st
+import pandas as pd
+import numpy as np
+import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import io
+import warnings
+warnings.filterwarnings('ignore')
+
+# Configuration de la page
+st.set_page_config(
+    page_title="Analyseur de Friction - Substrat Humide",
+    page_icon="🔬",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# CSS personnalisé
+st.markdown("""
+<style>
+    .main-header {
+        background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+        padding: 2rem;
+        border-radius: 15px;
+        color: white;
+        text-align: center;
+        margin: 1rem 0;
+    }
+    .metric-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 1.5rem;
+        border-radius: 10px;
+        color: white;
+        text-align: center;
+        margin: 0.5rem 0;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    .diagnostic-card {
+        background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+        padding: 1rem;
+        border-radius: 8px;
+        color: white;
+        margin: 0.5rem 0;
+    }
+    .error-card {
+        background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+        padding: 1rem;
+        border-radius: 8px;
+        color: white;
+        margin: 0.5rem 0;
+    }
+    .warning-card {
+        background: linear-gradient(135deg, #ffc107 0%, #fd7e14 100%);
+        padding: 1rem;
+        border-radius: 8px;
+        color: white;
+        margin: 0.5rem 0;
+    }
+    .friction-card {
+        background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
+        padding: 1.5rem;
+        border-radius: 10px;
+        color: white;
+        margin: 0.5rem 0;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# Titre principal
+st.markdown("""
+<div class="main-header">
+    <h1>🔬 Analyseur Avancé de Friction</h1>
+    <h2>Sphères sur Substrat Granulaire Humide</h2>
+    <p><em>🔥 Analyse complète des coefficients de friction avec nettoyage des données de bruit</em></p>
+</div>
+""", unsafe_allow_html=True)
+
+# Initialisation des données de session
+if 'experiments_data' not in st.session_state:
+    st.session_state.experiments_data = {}
+
+# ==================== FONCTIONS UTILITAIRES ====================
+
+def safe_format_value(value, format_str="{:.6f}", default="N/A"):
+    """Formatage sécurisé des valeurs pour éviter les erreurs"""
+    try:
+        if value is None or pd.isna(value):
+            return default
+        if isinstance(value, (int, float)) and not np.isnan(value):
+            return format_str.format(value)
+        return default
+    except:
+        return default
+
+def clean_data_aggressive(df_valid, min_points=10):
+    """🧹 NETTOYAGE AGRESSIF pour éliminer le bruit de début et fin"""
+    
+    if len(df_valid) < min_points:
+        return df_valid, {"error": "Pas assez de données"}
+    
+    # === ÉTAPE 1: Élimination du bruit de début et fin ===
+    # Supprimer 10-15% au début et à la fin pour éliminer le bruit
+    total_points = len(df_valid)
+    
+    # Calcul intelligent du pourcentage à supprimer
+    if total_points > 50:
+        remove_percent = 0.15  # 15% de chaque côté
+    elif total_points > 30:
+        remove_percent = 0.12  # 12% de chaque côté
+    else:
+        remove_percent = 0.10  # 10% de chaque côté minimum
+    
+    n_remove_start = max(3, int(total_points * remove_percent))
+    n_remove_end = max(3, int(total_points * remove_percent))
+    
+    # === ÉTAPE 2: Détection automatique du mouvement stable ===
+    # Calculer les déplacements inter-frames
+    dx = np.diff(df_valid['X_center'].values)
+    dy = np.diff(df_valid['Y_center'].values)
+    movement = np.sqrt(dx**2 + dy**2)
+    
+    # Trouver les zones de mouvement stable (médiane pour robustesse)
+    median_movement = np.median(movement)
+    stable_threshold = median_movement * 0.5  # Plus strict
+    
+    # Identifier le début et la fin du mouvement stable
+    stable_mask = movement > stable_threshold
+    
+    if np.any(stable_mask):
+        stable_indices = np.where(stable_mask)[0]
+        first_stable = stable_indices[0]
+        last_stable = stable_indices[-1]
+        
+        # Prendre une marge après le début et avant la fin
+        start_idx = max(n_remove_start, first_stable + 2)
+        end_idx = min(total_points - n_remove_end, last_stable + 1)
+    else:
+        # Si pas de mouvement détecté, utiliser les pourcentages
+        start_idx = n_remove_start
+        end_idx = total_points - n_remove_end
+    
+    # === ÉTAPE 3: Vérification finale ===
+    # S'assurer qu'on garde au moins 60% des données
+    if end_idx - start_idx < total_points * 0.6:
+        # Réduire l'agressivité du nettoyage
+        middle = total_points // 2
+        start_idx = max(5, middle - int(total_points * 0.3))
+        end_idx = min(total_points - 5, middle + int(total_points * 0.3))
+    
+    # S'assurer d'avoir assez de points
+    if end_idx - start_idx < min_points:
+        start_idx = max(0, total_points//4)
+        end_idx = min(total_points, total_points - total_points//4)
+    
+    df_cleaned = df_valid.iloc[start_idx:end_idx].copy().reset_index(drop=True)
+    
+    cleaning_info = {
+        "original_length": total_points,
+        "cleaned_length": len(df_cleaned),
+        "start_removed": start_idx,
+        "end_removed": total_points - end_idx,
+        "percentage_kept": len(df_cleaned) / total_points * 100,
+        "median_movement": median_movement,
+        "noise_removal": "AGRESSIF - Début et fin supprimés"
+    }
+    
+    return df_cleaned, cleaning_info
+
+# ==================== CALCUL FRICTION CORRIGÉ ====================
+
+def calculate_friction_metrics_corrected(df_valid, fps=250, angle_deg=15.0, 
+                                        sphere_mass_g=10.0, sphere_radius_mm=15.0, 
+                                        pixels_per_mm=5.0):
+    """🔥 Calcul CORRIGÉ des métriques de friction avec nettoyage du bruit"""
+    
+    # Paramètres physiques
+    dt = 1 / fps
+    mass_kg = sphere_mass_g / 1000
+    radius_m = sphere_radius_mm / 1000
+    angle_rad = np.radians(angle_deg)
+    g = 9.81
+    
+    # 🧹 NETTOYAGE AGRESSIF DES DONNÉES (suppression bruit début/fin)
+    df_clean, cleaning_info = clean_data_aggressive(df_valid)
+    
+    st.info(f"""🧹 **Nettoyage des données de bruit :**
+    - Points originaux : {cleaning_info['original_length']}
+    - Points nettoyés : {cleaning_info['cleaned_length']}
+    - Supprimés début : {cleaning_info['start_removed']}
+    - Supprimés fin : {cleaning_info['end_removed']}
+    - Pourcentage conservé : {cleaning_info['percentage_kept']:.1f}%
+    - **{cleaning_info['noise_removal']}**
+    """)
+    
+    # Conversion en unités physiques
+    x_m = df_clean['X_center'].values / pixels_per_mm / 1000
+    y_m = df_clean['Y_center'].values / pixels_per_mm / 1000
+    
+    # Lissage adaptatif
+    window_size = min(5, len(x_m) // 10)
+    if window_size >= 3:
+        x_smooth = np.convolve(x_m, np.ones(window_size)/window_size, mode='same')
+        y_smooth = np.convolve(y_m, np.ones(window_size)/window_size, mode='same')
+    else:
+        x_smooth = x_m
+        y_smooth = y_m
+    
+    # Cinématique
+    vx = np.gradient(x_smooth, dt)
+    vy = np.gradient(y_smooth, dt)
+    v_magnitude = np.sqrt(vx**2 + vy**2)
+    
+    # Accélérations
+    a_tangential = np.gradient(v_magnitude, dt)
+    
+    # Forces
+    F_gravity_normal = mass_kg * g * np.cos(angle_rad)
+    F_resistance = mass_kg * np.abs(a_tangential)
+    
+    # === CORRECTION DES COEFFICIENTS DE FRICTION ===
+    
+    # 1. μ Cinétique corrigé (friction directe)
+    mu_kinetic = F_resistance / F_gravity_normal
+    
+    # 2. μ Rolling corrigé (résistance pure au roulement)
+    mu_rolling = mu_kinetic - np.tan(angle_rad)
+    
+    # 3. μ Énergétique CORRIGÉ (problème détecté dans le code original)
+    # Calcul correct de l'énergie dissipée par unité de distance
+    distances = np.sqrt(np.diff(x_smooth)**2 + np.diff(y_smooth)**2)
+    total_distance = np.sum(distances)
+    
+    # Énergie cinétique initiale et finale
+    E_kinetic_initial = 0.5 * mass_kg * v_magnitude[0]**2
+    E_kinetic_final = 0.5 * mass_kg * v_magnitude[-1]**2
+    E_dissipated_total = E_kinetic_initial - E_kinetic_final
+    
+    # μ énergétique correct
+    if total_distance > 0 and E_dissipated_total > 0:
+        mu_energetic_global = E_dissipated_total / (F_gravity_normal * total_distance)
+    else:
+        mu_energetic_global = 0
+    
+    # μ énergétique instantané (plus doux)
+    cumul_distance = np.cumsum(np.concatenate([[0], distances]))
+    cumul_energy_loss = E_kinetic_initial - 0.5 * mass_kg * v_magnitude**2
+    
+    mu_energetic_inst = np.where(cumul_distance[:-1] > 0, 
+                                cumul_energy_loss[:-1] / (F_gravity_normal * cumul_distance[:-1]), 
+                                0)
+    # Ajouter le dernier point
+    mu_energetic_inst = np.concatenate([mu_energetic_inst, [mu_energetic_global]])
+    
+    # 4. Krr instantané
+    krr_instantaneous = np.abs(a_tangential) / g
+    
+    # === MÉTRIQUES GLOBALES ===
+    n_avg = max(2, len(v_magnitude) // 6)
+    v0 = np.mean(v_magnitude[:n_avg])
+    vf = np.mean(v_magnitude[-n_avg:])
+    
+    # Krr global
+    if total_distance > 0 and v0 > vf:
+        krr_global = (v0**2 - vf**2) / (2 * g * total_distance)
+    else:
+        krr_global = None
+    
+    # Moyennes des coefficients
+    mu_kinetic_avg = np.mean(mu_kinetic)
+    mu_rolling_avg = np.mean(mu_rolling)
+    
+    # Analyse statistique
+    mu_kinetic_std = np.std(mu_kinetic)
+    mu_rolling_std = np.std(mu_rolling)
+    correlation_v_mu = np.corrcoef(v_magnitude, mu_kinetic)[0, 1] if len(v_magnitude) > 3 else 0
+    
+    # Évolution temporelle
+    time_array = np.arange(len(df_clean)) * dt
+    if len(time_array) > 3:
+        mu_kinetic_trend = np.polyfit(time_array, mu_kinetic, 1)[0]
+        mu_rolling_trend = np.polyfit(time_array, mu_rolling, 1)[0]
+    else:
+        mu_kinetic_trend = 0
+        mu_rolling_trend = 0
+    
+    return {
+        # Métriques globales CORRIGÉES
+        'Krr_global': krr_global,
+        'mu_kinetic_avg': mu_kinetic_avg,
+        'mu_rolling_avg': mu_rolling_avg,
+        'mu_energetic': mu_energetic_global,  # CORRIGÉ
+        
+        # Variabilité
+        'mu_kinetic_std': mu_kinetic_std,
+        'mu_rolling_std': mu_rolling_std,
+        'mu_kinetic_trend': mu_kinetic_trend,
+        'mu_rolling_trend': mu_rolling_trend,
+        
+        # Corrélations
+        'correlation_velocity_friction': correlation_v_mu,
+        
+        # Vitesses de référence
+        'v0_ms': v0,
+        'vf_ms': vf,
+        'v0_mms': v0 * 1000,
+        'vf_mms': vf * 1000,
+        'total_distance_mm': total_distance * 1000,
+        
+        # Séries temporelles CORRIGÉES
+        'time_series': {
+            'time': time_array,
+            'velocity_mms': v_magnitude * 1000,
+            'acceleration_mms2': a_tangential * 1000,
+            'mu_kinetic': mu_kinetic,
+            'mu_rolling': mu_rolling,
+            'mu_energetic': mu_energetic_inst,  # CORRIGÉ
+            'krr_instantaneous': krr_instantaneous,
+            'resistance_force_mN': F_resistance * 1000,
+            'normal_force_mN': np.full_like(time_array, F_gravity_normal * 1000)
+        },
+        
+        # Informations de nettoyage
+        'cleaning_info': cleaning_info
+    }
+
+# ==================== GRAPHIQUES COMPLETS DEMANDÉS ====================
+
+def create_all_required_plots(metrics, experiment_name="Expérience"):
+    """🎯 TOUS LES GRAPHIQUES DEMANDÉS"""
+    
+    if 'time_series' not in metrics:
+        st.error("Pas de données temporelles disponibles")
+        return
+    
+    ts = metrics['time_series']
+    
+    # === 1. COEFFICIENTS DE FRICTION VS TEMPS (Principal) ===
+    st.markdown("#### 🔥 Coefficients de Friction vs Temps")
+    
+    fig_friction_time = go.Figure()
+    
+    # μ Cinétique
+    fig_friction_time.add_trace(go.Scatter(
+        x=ts['time'], 
+        y=ts['mu_kinetic'],
+        mode='lines',
+        name='μ Cinétique',
+        line=dict(color='red', width=3),
+        hovertemplate='Temps: %{x:.3f}s<br>μ Cinétique: %{y:.4f}<extra></extra>'
+    ))
+    
+    # μ Rolling
+    fig_friction_time.add_trace(go.Scatter(
+        x=ts['time'], 
+        y=ts['mu_rolling'],
+        mode='lines',
+        name='μ Rolling',
+        line=dict(color='blue', width=3),
+        hovertemplate='Temps: %{x:.3f}s<br>μ Rolling: %{y:.4f}<extra></extra>'
+    ))
+    
+    # μ Énergétique
+    fig_friction_time.add_trace(go.Scatter(
+        x=ts['time'], 
+        y=ts['mu_energetic'],
+        mode='lines',
+        name='μ Énergétique',
+        line=dict(color='purple', width=2),
+        hovertemplate='Temps: %{x:.3f}s<br>μ Énergétique: %{y:.4f}<extra></extra>'
+    ))
+    
+    # Krr instantané
+    fig_friction_time.add_trace(go.Scatter(
+        x=ts['time'], 
+        y=ts['krr_instantaneous'],
+        mode='lines',
+        name='Krr Instantané',
+        line=dict(color='orange', width=2, dash='dash'),
+        hovertemplate='Temps: %{x:.3f}s<br>Krr: %{y:.4f}<extra></extra>'
+    ))
+    
+    fig_friction_time.update_layout(
+        title=f"🔥 Évolution des Coefficients de Friction - {experiment_name}",
+        xaxis_title="Temps (s)",
+        yaxis_title="Coefficient de Friction",
+        height=500,
+        hovermode='x unified',
+        legend=dict(x=1.02, y=1)
+    )
+    
+    st.plotly_chart(fig_friction_time, use_container_width=True)
+    
+    # === 2. VITESSES ET ACCÉLÉRATION ===
+    st.markdown("#### 🏃 Vitesses et Accélération vs Temps")
+    
+    fig_kinematics = make_subplots(
+        rows=1, cols=2,
+        subplot_titles=('Vitesse vs Temps', 'Accélération vs Temps')
+    )
+    
+    # Vitesse
+    fig_kinematics.add_trace(
+        go.Scatter(x=ts['time'], y=ts['velocity_mms'], 
+                  mode='lines', name='Vitesse', line=dict(color='green', width=3)),
+        row=1, col=1
+    )
+    
+    # Marqueurs pour vitesse initiale et finale
+    fig_kinematics.add_trace(
+        go.Scatter(x=[ts['time'][0]], y=[ts['velocity_mms'][0]], 
+                  mode='markers', name='V₀ (initiale)', 
+                  marker=dict(color='red', size=12, symbol='circle')),
+        row=1, col=1
+    )
+    
+    fig_kinematics.add_trace(
+        go.Scatter(x=[ts['time'][-1]], y=[ts['velocity_mms'][-1]], 
+                  mode='markers', name='Vf (finale)', 
+                  marker=dict(color='blue', size=12, symbol='square')),
+        row=1, col=1
+    )
+    
+    # Accélération
+    fig_kinematics.add_trace(
+        go.Scatter(x=ts['time'], y=ts['acceleration_mms2'], 
+                  mode='lines', name='Accélération', line=dict(color='red', width=2)),
+        row=1, col=2
+    )
+    
+    fig_kinematics.update_xaxes(title_text="Temps (s)")
+    fig_kinematics.update_yaxes(title_text="Vitesse (mm/s)", row=1, col=1)
+    fig_kinematics.update_yaxes(title_text="Accélération (mm/s²)", row=1, col=2)
+    fig_kinematics.update_layout(height=400, showlegend=True)
+    
+    st.plotly_chart(fig_kinematics, use_container_width=True)
+    
+    # === 3. HISTOGRAMMES DES COEFFICIENTS ===
+    st.markdown("#### 📊 Histogrammes des Coefficients de Friction")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        fig_hist_kinetic = px.histogram(
+            x=ts['mu_kinetic'], 
+            nbins=20,
+            title="Distribution μ Cinétique",
+            labels={'x': 'μ Cinétique', 'y': 'Fréquence'},
+            color_discrete_sequence=['red']
+        )
+        fig_hist_kinetic.update_layout(height=300)
+        st.plotly_chart(fig_hist_kinetic, use_container_width=True)
+    
+    with col2:
+        fig_hist_rolling = px.histogram(
+            x=ts['mu_rolling'], 
+            nbins=20,
+            title="Distribution μ Rolling",
+            labels={'x': 'μ Rolling', 'y': 'Fréquence'},
+            color_discrete_sequence=['blue']
+        )
+        fig_hist_rolling.update_layout(height=300)
+        st.plotly_chart(fig_hist_rolling, use_container_width=True)
+    
+    with col3:
+        fig_hist_krr = px.histogram(
+            x=ts['krr_instantaneous'], 
+            nbins=20,
+            title="Distribution Krr",
+            labels={'x': 'Krr Instantané', 'y': 'Fréquence'},
+            color_discrete_sequence=['orange']
+        )
+        fig_hist_krr.update_layout(height=300)
+        st.plotly_chart(fig_hist_krr, use_container_width=True)
+    
+    # === 4. ANALYSE DES FORCES ===
+    st.markdown("#### ⚖️ Analyse des Forces")
+    
+    fig_forces = make_subplots(
+        rows=1, cols=2,
+        subplot_titles=('Forces vs Temps', 'Forces Comparées')
+    )
+    
+    # Forces vs temps
+    fig_forces.add_trace(
+        go.Scatter(x=ts['time'], y=ts['resistance_force_mN'], 
+                  mode='lines', name='F Résistance', line=dict(color='red', width=2)),
+        row=1, col=1
+    )
+    fig_forces.add_trace(
+        go.Scatter(x=ts['time'], y=ts['normal_force_mN'], 
+                  mode='lines', name='F Normale', line=dict(color='blue', width=2, dash='dash')),
+        row=1, col=1
+    )
+    
+    # Forces comparées (moyenne)
+    avg_resistance = np.mean(ts['resistance_force_mN'])
+    avg_normal = np.mean(ts['normal_force_mN'])
+    
+    fig_forces.add_trace(
+        go.Bar(x=['F Résistance', 'F Normale'], y=[avg_resistance, avg_normal],
+               marker_color=['red', 'blue'], name='Forces Moyennes'),
+        row=1, col=2
+    )
+    
+    fig_forces.update_xaxes(title_text="Temps (s)", row=1, col=1)
+    fig_forces.update_yaxes(title_text="Force (mN)")
+    fig_forces.update_layout(height=400, showlegend=True)
+    
+    st.plotly_chart(fig_forces, use_container_width=True)
+
+def create_comparison_plots_complete(experiments_data):
+    """📊 GRAPHIQUES DE COMPARAISON COMPLETS avec angle en abscisse"""
+    
+    if len(experiments_data) < 2:
+        st.warning("Au moins 2 expériences nécessaires pour la comparaison")
+        return
+    
+    # Préparer les données
+    comparison_data = []
+    for exp_name, exp_data in experiments_data.items():
+        metrics = exp_data.get('metrics', {})
+        
+        comparison_data.append({
+            'Expérience': exp_name,
+            'Teneur_eau': exp_data.get('water_content', 0),
+            'Angle': exp_data.get('angle', 15),
+            'Type_sphère': exp_data.get('sphere_type', 'Acier'),
+            'Krr': metrics.get('Krr_global'),
+            'mu_kinetic_avg': metrics.get('mu_kinetic_avg'),
+            'mu_rolling_avg': metrics.get('mu_rolling_avg'),
+            'mu_energetic': metrics.get('mu_energetic'),
+            'v0_mms': metrics.get('v0_mms'),
+            'vf_mms': metrics.get('vf_mms'),
+            'correlation_v_mu': metrics.get('correlation_velocity_friction'),
+            'success_rate': exp_data.get('success_rate', 100)
+        })
+    
+    comp_df = pd.DataFrame(comparison_data)
+    
+    # === GRAPHIQUES DEMANDÉS ===
+    
+    # 1. Coefficients vs ANGLE (demandé spécifiquement)
+    st.markdown("### 📐 Coefficients de Friction vs Angle")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # μ Cinétique vs Angle
+        valid_kinetic_angle = comp_df.dropna(subset=['mu_kinetic_avg', 'Angle'])
+        if len(valid_kinetic_angle) > 0:
+            fig_kinetic_angle = px.scatter(
+                valid_kinetic_angle,
+                x='Angle',
+                y='mu_kinetic_avg',
+                color='Teneur_eau',
+                size='success_rate',
+                hover_data=['Expérience'],
+                title="🔥 μ Cinétique vs Angle",
+                labels={'Angle': 'Angle (°)', 'mu_kinetic_avg': 'μ Cinétique'}
+            )
+            
+            # Ligne de tendance
+            if len(valid_kinetic_angle) >= 2:
+                z = np.polyfit(valid_kinetic_angle['Angle'], valid_kinetic_angle['mu_kinetic_avg'], 1)
+                p = np.poly1d(z)
+                x_line = np.linspace(valid_kinetic_angle['Angle'].min(), valid_kinetic_angle['Angle'].max(), 100)
+                fig_kinetic_angle.add_trace(go.Scatter(
+                    x=x_line, y=p(x_line), mode='lines', name='Tendance',
+                    line=dict(dash='dash', color='red')
+                ))
+            
+            st.plotly_chart(fig_kinetic_angle, use_container_width=True)
+    
+    with col2:
+        # μ Rolling vs Angle
+        valid_rolling_angle = comp_df.dropna(subset=['mu_rolling_avg', 'Angle'])
+        if len(valid_rolling_angle) > 0:
+            fig_rolling_angle = px.scatter(
+                valid_rolling_angle,
+                x='Angle',
+                y='mu_rolling_avg',
+                color='Teneur_eau',
+                size='success_rate',
+                hover_data=['Expérience'],
+                title="🎯 μ Rolling vs Angle",
+                labels={'Angle': 'Angle (°)', 'mu_rolling_avg': 'μ Rolling'}
+            )
+            
+            # Ligne de tendance
+            if len(valid_rolling_angle) >= 2:
+                z = np.polyfit(valid_rolling_angle['Angle'], valid_rolling_angle['mu_rolling_avg'], 1)
+                p = np.poly1d(z)
+                x_line = np.linspace(valid_rolling_angle['Angle'].min(), valid_rolling_angle['Angle'].max(), 100)
+                fig_rolling_angle.add_trace(go.Scatter(
+                    x=x_line, y=p(x_line), mode='lines', name='Tendance',
+                    line=dict(dash='dash', color='blue')
+                ))
+            
+            st.plotly_chart(fig_rolling_angle, use_container_width=True)
+    
+    # 2. Krr vs Angle et Teneur en Eau
+    st.markdown("### 📊 Krr vs Angle et Teneur en Eau")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Krr vs Angle
+        valid_krr_angle = comp_df.dropna(subset=['Krr', 'Angle'])
+        if len(valid_krr_angle) > 0:
+            fig_krr_angle = px.line(
+                valid_krr_angle,
+                x='Angle',
+                y='Krr',
+                color='Teneur_eau',
+                markers=True,
+                title="📊 Krr vs Angle",
+                labels={'Angle': 'Angle (°)', 'Krr': 'Coefficient Krr'}
+            )
+            st.plotly_chart(fig_krr_angle, use_container_width=True)
+    
+    with col2:
+        # Krr vs Teneur en eau
+        valid_krr_water = comp_df.dropna(subset=['Krr', 'Teneur_eau'])
+        if len(valid_krr_water) > 0:
+            fig_krr_water = px.scatter(
+                valid_krr_water,
+                x='Teneur_eau',
+                y='Krr',
+                color='Angle',
+                size='success_rate',
+                hover_data=['Expérience'],
+                title="💧 Krr vs Teneur en Eau",
+                labels={'Teneur_eau': 'Teneur en eau (%)', 'Krr': 'Coefficient Krr'}
+            )
+            st.plotly_chart(fig_krr_water, use_container_width=True)
+    
+    # 3. Vitesses Initiales et Finales
+    st.markdown("### 🏃 Comparaison des Vitesses")
+    
+    valid_velocities = comp_df.dropna(subset=['v0_mms', 'vf_mms'])
+    if len(valid_velocities) > 0:
+        fig_
+        valid_velocities = comp_df.dropna(subset=['v0_mms', 'vf_mms'])
     if len(valid_velocities) > 0:
         fig_velocities = go.Figure()
         
@@ -725,646 +1368,4 @@ st.markdown(f"""
     <p><em>🎯 Prêt pour analyse de vos données expérimentales !</em></p>
     <p><strong>📊 Statut :</strong> {len(st.session_state.experiments_data)} expériences chargées</p>
 </div>
-""", unsafe_allow_html=True)import streamlit as st
-import pandas as pd
-import numpy as np
-import plotly.express as px
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-import io
-import warnings
-warnings.filterwarnings('ignore')
-
-# Configuration de la page
-st.set_page_config(
-    page_title="Analyseur de Friction - Substrat Humide",
-    page_icon="🔬",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-# CSS personnalisé
-st.markdown("""
-<style>
-    .main-header {
-        background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
-        padding: 2rem;
-        border-radius: 15px;
-        color: white;
-        text-align: center;
-        margin: 1rem 0;
-    }
-    .metric-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 1.5rem;
-        border-radius: 10px;
-        color: white;
-        text-align: center;
-        margin: 0.5rem 0;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    }
-    .diagnostic-card {
-        background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
-        padding: 1rem;
-        border-radius: 8px;
-        color: white;
-        margin: 0.5rem 0;
-    }
-    .error-card {
-        background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
-        padding: 1rem;
-        border-radius: 8px;
-        color: white;
-        margin: 0.5rem 0;
-    }
-    .warning-card {
-        background: linear-gradient(135deg, #ffc107 0%, #fd7e14 100%);
-        padding: 1rem;
-        border-radius: 8px;
-        color: white;
-        margin: 0.5rem 0;
-    }
-    .friction-card {
-        background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
-        padding: 1.5rem;
-        border-radius: 10px;
-        color: white;
-        margin: 0.5rem 0;
-    }
-</style>
 """, unsafe_allow_html=True)
-
-# Titre principal
-st.markdown("""
-<div class="main-header">
-    <h1>🔬 Analyseur Avancé de Friction</h1>
-    <h2>Sphères sur Substrat Granulaire Humide</h2>
-    <p><em>🔥 Analyse complète des coefficients de friction avec nettoyage des données de bruit</em></p>
-</div>
-""", unsafe_allow_html=True)
-
-# Initialisation des données de session
-if 'experiments_data' not in st.session_state:
-    st.session_state.experiments_data = {}
-
-# ==================== FONCTIONS UTILITAIRES ====================
-
-def safe_format_value(value, format_str="{:.6f}", default="N/A"):
-    """Formatage sécurisé des valeurs pour éviter les erreurs"""
-    try:
-        if value is None or pd.isna(value):
-            return default
-        if isinstance(value, (int, float)) and not np.isnan(value):
-            return format_str.format(value)
-        return default
-    except:
-        return default
-
-def clean_data_aggressive(df_valid, min_points=10):
-    """🧹 NETTOYAGE AGRESSIF pour éliminer le bruit de début et fin"""
-    
-    if len(df_valid) < min_points:
-        return df_valid, {"error": "Pas assez de données"}
-    
-    # === ÉTAPE 1: Élimination du bruit de début et fin ===
-    # Supprimer 10-15% au début et à la fin pour éliminer le bruit
-    total_points = len(df_valid)
-    
-    # Calcul intelligent du pourcentage à supprimer
-    if total_points > 50:
-        remove_percent = 0.15  # 15% de chaque côté
-    elif total_points > 30:
-        remove_percent = 0.12  # 12% de chaque côté
-    else:
-        remove_percent = 0.10  # 10% de chaque côté minimum
-    
-    n_remove_start = max(3, int(total_points * remove_percent))
-    n_remove_end = max(3, int(total_points * remove_percent))
-    
-    # === ÉTAPE 2: Détection automatique du mouvement stable ===
-    # Calculer les déplacements inter-frames
-    dx = np.diff(df_valid['X_center'].values)
-    dy = np.diff(df_valid['Y_center'].values)
-    movement = np.sqrt(dx**2 + dy**2)
-    
-    # Trouver les zones de mouvement stable (médiane pour robustesse)
-    median_movement = np.median(movement)
-    stable_threshold = median_movement * 0.5  # Plus strict
-    
-    # Identifier le début et la fin du mouvement stable
-    stable_mask = movement > stable_threshold
-    
-    if np.any(stable_mask):
-        stable_indices = np.where(stable_mask)[0]
-        first_stable = stable_indices[0]
-        last_stable = stable_indices[-1]
-        
-        # Prendre une marge après le début et avant la fin
-        start_idx = max(n_remove_start, first_stable + 2)
-        end_idx = min(total_points - n_remove_end, last_stable + 1)
-    else:
-        # Si pas de mouvement détecté, utiliser les pourcentages
-        start_idx = n_remove_start
-        end_idx = total_points - n_remove_end
-    
-    # === ÉTAPE 3: Vérification finale ===
-    # S'assurer qu'on garde au moins 60% des données
-    if end_idx - start_idx < total_points * 0.6:
-        # Réduire l'agressivité du nettoyage
-        middle = total_points // 2
-        start_idx = max(5, middle - int(total_points * 0.3))
-        end_idx = min(total_points - 5, middle + int(total_points * 0.3))
-    
-    # S'assurer d'avoir assez de points
-    if end_idx - start_idx < min_points:
-        start_idx = max(0, total_points//4)
-        end_idx = min(total_points, total_points - total_points//4)
-    
-    df_cleaned = df_valid.iloc[start_idx:end_idx].copy().reset_index(drop=True)
-    
-    cleaning_info = {
-        "original_length": total_points,
-        "cleaned_length": len(df_cleaned),
-        "start_removed": start_idx,
-        "end_removed": total_points - end_idx,
-        "percentage_kept": len(df_cleaned) / total_points * 100,
-        "median_movement": median_movement,
-        "noise_removal": "AGRESSIF - Début et fin supprimés"
-    }
-    
-    return df_cleaned, cleaning_info
-
-# ==================== CALCUL FRICTION CORRIGÉ ====================
-
-def calculate_friction_metrics_corrected(df_valid, fps=250, angle_deg=15.0, 
-                                        sphere_mass_g=10.0, sphere_radius_mm=15.0, 
-                                        pixels_per_mm=5.0):
-    """🔥 Calcul CORRIGÉ des métriques de friction avec nettoyage du bruit"""
-    
-    # Paramètres physiques
-    dt = 1 / fps
-    mass_kg = sphere_mass_g / 1000
-    radius_m = sphere_radius_mm / 1000
-    angle_rad = np.radians(angle_deg)
-    g = 9.81
-    
-    # 🧹 NETTOYAGE AGRESSIF DES DONNÉES (suppression bruit début/fin)
-    df_clean, cleaning_info = clean_data_aggressive(df_valid)
-    
-    st.info(f"""🧹 **Nettoyage des données de bruit :**
-    - Points originaux : {cleaning_info['original_length']}
-    - Points nettoyés : {cleaning_info['cleaned_length']}
-    - Supprimés début : {cleaning_info['start_removed']}
-    - Supprimés fin : {cleaning_info['end_removed']}
-    - Pourcentage conservé : {cleaning_info['percentage_kept']:.1f}%
-    - **{cleaning_info['noise_removal']}**
-    """)
-    
-    # Conversion en unités physiques
-    x_m = df_clean['X_center'].values / pixels_per_mm / 1000
-    y_m = df_clean['Y_center'].values / pixels_per_mm / 1000
-    
-    # Lissage adaptatif
-    window_size = min(5, len(x_m) // 10)
-    if window_size >= 3:
-        x_smooth = np.convolve(x_m, np.ones(window_size)/window_size, mode='same')
-        y_smooth = np.convolve(y_m, np.ones(window_size)/window_size, mode='same')
-    else:
-        x_smooth = x_m
-        y_smooth = y_m
-    
-    # Cinématique
-    vx = np.gradient(x_smooth, dt)
-    vy = np.gradient(y_smooth, dt)
-    v_magnitude = np.sqrt(vx**2 + vy**2)
-    
-    # Accélérations
-    a_tangential = np.gradient(v_magnitude, dt)
-    
-    # Forces
-    F_gravity_normal = mass_kg * g * np.cos(angle_rad)
-    F_resistance = mass_kg * np.abs(a_tangential)
-    
-    # === CORRECTION DES COEFFICIENTS DE FRICTION ===
-    
-    # 1. μ Cinétique corrigé (friction directe)
-    mu_kinetic = F_resistance / F_gravity_normal
-    
-    # 2. μ Rolling corrigé (résistance pure au roulement)
-    mu_rolling = mu_kinetic - np.tan(angle_rad)
-    
-    # 3. μ Énergétique CORRIGÉ (problème détecté dans le code original)
-    # Calcul correct de l'énergie dissipée par unité de distance
-    distances = np.sqrt(np.diff(x_smooth)**2 + np.diff(y_smooth)**2)
-    total_distance = np.sum(distances)
-    
-    # Énergie cinétique initiale et finale
-    E_kinetic_initial = 0.5 * mass_kg * v_magnitude[0]**2
-    E_kinetic_final = 0.5 * mass_kg * v_magnitude[-1]**2
-    E_dissipated_total = E_kinetic_initial - E_kinetic_final
-    
-    # μ énergétique correct
-    if total_distance > 0 and E_dissipated_total > 0:
-        mu_energetic_global = E_dissipated_total / (F_gravity_normal * total_distance)
-    else:
-        mu_energetic_global = 0
-    
-    # μ énergétique instantané (plus doux)
-    cumul_distance = np.cumsum(np.concatenate([[0], distances]))
-    cumul_energy_loss = E_kinetic_initial - 0.5 * mass_kg * v_magnitude**2
-    
-    mu_energetic_inst = np.where(cumul_distance[:-1] > 0, 
-                                cumul_energy_loss[:-1] / (F_gravity_normal * cumul_distance[:-1]), 
-                                0)
-    # Ajouter le dernier point
-    mu_energetic_inst = np.concatenate([mu_energetic_inst, [mu_energetic_global]])
-    
-    # 4. Krr instantané
-    krr_instantaneous = np.abs(a_tangential) / g
-    
-    # === MÉTRIQUES GLOBALES ===
-    n_avg = max(2, len(v_magnitude) // 6)
-    v0 = np.mean(v_magnitude[:n_avg])
-    vf = np.mean(v_magnitude[-n_avg:])
-    
-    # Krr global
-    if total_distance > 0 and v0 > vf:
-        krr_global = (v0**2 - vf**2) / (2 * g * total_distance)
-    else:
-        krr_global = None
-    
-    # Moyennes des coefficients
-    mu_kinetic_avg = np.mean(mu_kinetic)
-    mu_rolling_avg = np.mean(mu_rolling)
-    
-    # Analyse statistique
-    mu_kinetic_std = np.std(mu_kinetic)
-    mu_rolling_std = np.std(mu_rolling)
-    correlation_v_mu = np.corrcoef(v_magnitude, mu_kinetic)[0, 1] if len(v_magnitude) > 3 else 0
-    
-    # Évolution temporelle
-    time_array = np.arange(len(df_clean)) * dt
-    if len(time_array) > 3:
-        mu_kinetic_trend = np.polyfit(time_array, mu_kinetic, 1)[0]
-        mu_rolling_trend = np.polyfit(time_array, mu_rolling, 1)[0]
-    else:
-        mu_kinetic_trend = 0
-        mu_rolling_trend = 0
-    
-    return {
-        # Métriques globales CORRIGÉES
-        'Krr_global': krr_global,
-        'mu_kinetic_avg': mu_kinetic_avg,
-        'mu_rolling_avg': mu_rolling_avg,
-        'mu_energetic': mu_energetic_global,  # CORRIGÉ
-        
-        # Variabilité
-        'mu_kinetic_std': mu_kinetic_std,
-        'mu_rolling_std': mu_rolling_std,
-        'mu_kinetic_trend': mu_kinetic_trend,
-        'mu_rolling_trend': mu_rolling_trend,
-        
-        # Corrélations
-        'correlation_velocity_friction': correlation_v_mu,
-        
-        # Vitesses de référence
-        'v0_ms': v0,
-        'vf_ms': vf,
-        'v0_mms': v0 * 1000,
-        'vf_mms': vf * 1000,
-        'total_distance_mm': total_distance * 1000,
-        
-        # Séries temporelles CORRIGÉES
-        'time_series': {
-            'time': time_array,
-            'velocity_mms': v_magnitude * 1000,
-            'acceleration_mms2': a_tangential * 1000,
-            'mu_kinetic': mu_kinetic,
-            'mu_rolling': mu_rolling,
-            'mu_energetic': mu_energetic_inst,  # CORRIGÉ
-            'krr_instantaneous': krr_instantaneous,
-            'resistance_force_mN': F_resistance * 1000,
-            'normal_force_mN': np.full_like(time_array, F_gravity_normal * 1000)
-        },
-        
-        # Informations de nettoyage
-        'cleaning_info': cleaning_info
-    }
-
-# ==================== GRAPHIQUES COMPLETS DEMANDÉS ====================
-
-def create_all_required_plots(metrics, experiment_name="Expérience"):
-    """🎯 TOUS LES GRAPHIQUES DEMANDÉS"""
-    
-    if 'time_series' not in metrics:
-        st.error("Pas de données temporelles disponibles")
-        return
-    
-    ts = metrics['time_series']
-    
-    # === 1. COEFFICIENTS DE FRICTION VS TEMPS (Principal) ===
-    st.markdown("#### 🔥 Coefficients de Friction vs Temps")
-    
-    fig_friction_time = go.Figure()
-    
-    # μ Cinétique
-    fig_friction_time.add_trace(go.Scatter(
-        x=ts['time'], 
-        y=ts['mu_kinetic'],
-        mode='lines',
-        name='μ Cinétique',
-        line=dict(color='red', width=3),
-        hovertemplate='Temps: %{x:.3f}s<br>μ Cinétique: %{y:.4f}<extra></extra>'
-    ))
-    
-    # μ Rolling
-    fig_friction_time.add_trace(go.Scatter(
-        x=ts['time'], 
-        y=ts['mu_rolling'],
-        mode='lines',
-        name='μ Rolling',
-        line=dict(color='blue', width=3),
-        hovertemplate='Temps: %{x:.3f}s<br>μ Rolling: %{y:.4f}<extra></extra>'
-    ))
-    
-    # μ Énergétique
-    fig_friction_time.add_trace(go.Scatter(
-        x=ts['time'], 
-        y=ts['mu_energetic'],
-        mode='lines',
-        name='μ Énergétique',
-        line=dict(color='purple', width=2),
-        hovertemplate='Temps: %{x:.3f}s<br>μ Énergétique: %{y:.4f}<extra></extra>'
-    ))
-    
-    # Krr instantané
-    fig_friction_time.add_trace(go.Scatter(
-        x=ts['time'], 
-        y=ts['krr_instantaneous'],
-        mode='lines',
-        name='Krr Instantané',
-        line=dict(color='orange', width=2, dash='dash'),
-        hovertemplate='Temps: %{x:.3f}s<br>Krr: %{y:.4f}<extra></extra>'
-    ))
-    
-    fig_friction_time.update_layout(
-        title=f"🔥 Évolution des Coefficients de Friction - {experiment_name}",
-        xaxis_title="Temps (s)",
-        yaxis_title="Coefficient de Friction",
-        height=500,
-        hovermode='x unified',
-        legend=dict(x=1.02, y=1)
-    )
-    
-    st.plotly_chart(fig_friction_time, use_container_width=True)
-    
-    # === 2. VITESSES ET ACCÉLÉRATION ===
-    st.markdown("#### 🏃 Vitesses et Accélération vs Temps")
-    
-    fig_kinematics = make_subplots(
-        rows=1, cols=2,
-        subplot_titles=('Vitesse vs Temps', 'Accélération vs Temps')
-    )
-    
-    # Vitesse
-    fig_kinematics.add_trace(
-        go.Scatter(x=ts['time'], y=ts['velocity_mms'], 
-                  mode='lines', name='Vitesse', line=dict(color='green', width=3)),
-        row=1, col=1
-    )
-    
-    # Marqueurs pour vitesse initiale et finale
-    fig_kinematics.add_trace(
-        go.Scatter(x=[ts['time'][0]], y=[ts['velocity_mms'][0]], 
-                  mode='markers', name='V₀ (initiale)', 
-                  marker=dict(color='red', size=12, symbol='circle')),
-        row=1, col=1
-    )
-    
-    fig_kinematics.add_trace(
-        go.Scatter(x=[ts['time'][-1]], y=[ts['velocity_mms'][-1]], 
-                  mode='markers', name='Vf (finale)', 
-                  marker=dict(color='blue', size=12, symbol='square')),
-        row=1, col=1
-    )
-    
-    # Accélération
-    fig_kinematics.add_trace(
-        go.Scatter(x=ts['time'], y=ts['acceleration_mms2'], 
-                  mode='lines', name='Accélération', line=dict(color='red', width=2)),
-        row=1, col=2
-    )
-    
-    fig_kinematics.update_xaxes(title_text="Temps (s)")
-    fig_kinematics.update_yaxes(title_text="Vitesse (mm/s)", row=1, col=1)
-    fig_kinematics.update_yaxes(title_text="Accélération (mm/s²)", row=1, col=2)
-    fig_kinematics.update_layout(height=400, showlegend=True)
-    
-    st.plotly_chart(fig_kinematics, use_container_width=True)
-    
-    # === 3. HISTOGRAMMES DES COEFFICIENTS ===
-    st.markdown("#### 📊 Histogrammes des Coefficients de Friction")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        fig_hist_kinetic = px.histogram(
-            x=ts['mu_kinetic'], 
-            nbins=20,
-            title="Distribution μ Cinétique",
-            labels={'x': 'μ Cinétique', 'y': 'Fréquence'},
-            color_discrete_sequence=['red']
-        )
-        fig_hist_kinetic.update_layout(height=300)
-        st.plotly_chart(fig_hist_kinetic, use_container_width=True)
-    
-    with col2:
-        fig_hist_rolling = px.histogram(
-            x=ts['mu_rolling'], 
-            nbins=20,
-            title="Distribution μ Rolling",
-            labels={'x': 'μ Rolling', 'y': 'Fréquence'},
-            color_discrete_sequence=['blue']
-        )
-        fig_hist_rolling.update_layout(height=300)
-        st.plotly_chart(fig_hist_rolling, use_container_width=True)
-    
-    with col3:
-        fig_hist_krr = px.histogram(
-            x=ts['krr_instantaneous'], 
-            nbins=20,
-            title="Distribution Krr",
-            labels={'x': 'Krr Instantané', 'y': 'Fréquence'},
-            color_discrete_sequence=['orange']
-        )
-        fig_hist_krr.update_layout(height=300)
-        st.plotly_chart(fig_hist_krr, use_container_width=True)
-    
-    # === 4. ANALYSE DES FORCES ===
-    st.markdown("#### ⚖️ Analyse des Forces")
-    
-    fig_forces = make_subplots(
-        rows=1, cols=2,
-        subplot_titles=('Forces vs Temps', 'Forces Comparées')
-    )
-    
-    # Forces vs temps
-    fig_forces.add_trace(
-        go.Scatter(x=ts['time'], y=ts['resistance_force_mN'], 
-                  mode='lines', name='F Résistance', line=dict(color='red', width=2)),
-        row=1, col=1
-    )
-    fig_forces.add_trace(
-        go.Scatter(x=ts['time'], y=ts['normal_force_mN'], 
-                  mode='lines', name='F Normale', line=dict(color='blue', width=2, dash='dash')),
-        row=1, col=1
-    )
-    
-    # Forces comparées (moyenne)
-    avg_resistance = np.mean(ts['resistance_force_mN'])
-    avg_normal = np.mean(ts['normal_force_mN'])
-    
-    fig_forces.add_trace(
-        go.Bar(x=['F Résistance', 'F Normale'], y=[avg_resistance, avg_normal],
-               marker_color=['red', 'blue'], name='Forces Moyennes'),
-        row=1, col=2
-    )
-    
-    fig_forces.update_xaxes(title_text="Temps (s)", row=1, col=1)
-    fig_forces.update_yaxes(title_text="Force (mN)")
-    fig_forces.update_layout(height=400, showlegend=True)
-    
-    st.plotly_chart(fig_forces, use_container_width=True)
-
-def create_comparison_plots_complete(experiments_data):
-    """📊 GRAPHIQUES DE COMPARAISON COMPLETS avec angle en abscisse"""
-    
-    if len(experiments_data) < 2:
-        st.warning("Au moins 2 expériences nécessaires pour la comparaison")
-        return
-    
-    # Préparer les données
-    comparison_data = []
-    for exp_name, exp_data in experiments_data.items():
-        metrics = exp_data.get('metrics', {})
-        
-        comparison_data.append({
-            'Expérience': exp_name,
-            'Teneur_eau': exp_data.get('water_content', 0),
-            'Angle': exp_data.get('angle', 15),
-            'Type_sphère': exp_data.get('sphere_type', 'Acier'),
-            'Krr': metrics.get('Krr_global'),
-            'mu_kinetic_avg': metrics.get('mu_kinetic_avg'),
-            'mu_rolling_avg': metrics.get('mu_rolling_avg'),
-            'mu_energetic': metrics.get('mu_energetic'),
-            'v0_mms': metrics.get('v0_mms'),
-            'vf_mms': metrics.get('vf_mms'),
-            'correlation_v_mu': metrics.get('correlation_velocity_friction'),
-            'success_rate': exp_data.get('success_rate', 100)
-        })
-    
-    comp_df = pd.DataFrame(comparison_data)
-    
-    # === GRAPHIQUES DEMANDÉS ===
-    
-    # 1. Coefficients vs ANGLE (demandé spécifiquement)
-    st.markdown("### 📐 Coefficients de Friction vs Angle")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # μ Cinétique vs Angle
-        valid_kinetic_angle = comp_df.dropna(subset=['mu_kinetic_avg', 'Angle'])
-        if len(valid_kinetic_angle) > 0:
-            fig_kinetic_angle = px.scatter(
-                valid_kinetic_angle,
-                x='Angle',
-                y='mu_kinetic_avg',
-                color='Teneur_eau',
-                size='success_rate',
-                hover_data=['Expérience'],
-                title="🔥 μ Cinétique vs Angle",
-                labels={'Angle': 'Angle (°)', 'mu_kinetic_avg': 'μ Cinétique'}
-            )
-            
-            # Ligne de tendance
-            if len(valid_kinetic_angle) >= 2:
-                z = np.polyfit(valid_kinetic_angle['Angle'], valid_kinetic_angle['mu_kinetic_avg'], 1)
-                p = np.poly1d(z)
-                x_line = np.linspace(valid_kinetic_angle['Angle'].min(), valid_kinetic_angle['Angle'].max(), 100)
-                fig_kinetic_angle.add_trace(go.Scatter(
-                    x=x_line, y=p(x_line), mode='lines', name='Tendance',
-                    line=dict(dash='dash', color='red')
-                ))
-            
-            st.plotly_chart(fig_kinetic_angle, use_container_width=True)
-    
-    with col2:
-        # μ Rolling vs Angle
-        valid_rolling_angle = comp_df.dropna(subset=['mu_rolling_avg', 'Angle'])
-        if len(valid_rolling_angle) > 0:
-            fig_rolling_angle = px.scatter(
-                valid_rolling_angle,
-                x='Angle',
-                y='mu_rolling_avg',
-                color='Teneur_eau',
-                size='success_rate',
-                hover_data=['Expérience'],
-                title="🎯 μ Rolling vs Angle",
-                labels={'Angle': 'Angle (°)', 'mu_rolling_avg': 'μ Rolling'}
-            )
-            
-            # Ligne de tendance
-            if len(valid_rolling_angle) >= 2:
-                z = np.polyfit(valid_rolling_angle['Angle'], valid_rolling_angle['mu_rolling_avg'], 1)
-                p = np.poly1d(z)
-                x_line = np.linspace(valid_rolling_angle['Angle'].min(), valid_rolling_angle['Angle'].max(), 100)
-                fig_rolling_angle.add_trace(go.Scatter(
-                    x=x_line, y=p(x_line), mode='lines', name='Tendance',
-                    line=dict(dash='dash', color='blue')
-                ))
-            
-            st.plotly_chart(fig_rolling_angle, use_container_width=True)
-    
-    # 2. Krr vs Angle et Teneur en Eau
-    st.markdown("### 📊 Krr vs Angle et Teneur en Eau")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # Krr vs Angle
-        valid_krr_angle = comp_df.dropna(subset=['Krr', 'Angle'])
-        if len(valid_krr_angle) > 0:
-            fig_krr_angle = px.line(
-                valid_krr_angle,
-                x='Angle',
-                y='Krr',
-                color='Teneur_eau',
-                markers=True,
-                title="📊 Krr vs Angle",
-                labels={'Angle': 'Angle (°)', 'Krr': 'Coefficient Krr'}
-            )
-            st.plotly_chart(fig_krr_angle, use_container_width=True)
-    
-    with col2:
-        # Krr vs Teneur en eau
-        valid_krr_water = comp_df.dropna(subset=['Krr', 'Teneur_eau'])
-        if len(valid_krr_water) > 0:
-            fig_krr_water = px.scatter(
-                valid_krr_water,
-                x='Teneur_eau',
-                y='Krr',
-                color='Angle',
-                size='success_rate',
-                hover_data=['Expérience'],
-                title="💧 Krr vs Teneur en Eau",
-                labels={'Teneur_eau': 'Teneur en eau (%)', 'Krr': 'Coefficient Krr'}
-            )
-            st.plotly_chart(fig_krr_water, use_container_width=True)
-    
-    # 3. Vitesses Initiales et Finales
-    st.markdown("### 🏃 Comparaison des Vitesses")
-    
-    valid_velocities = comp_df.dropna(subset=['v0_mms', 'vf_mms'])
-    if len(valid_velocities) > 0:
-        fig_
