@@ -2144,6 +2144,11 @@ with st.sidebar.expander("🎯 Valeurs Attendues"):
     **μ Rolling typiques :**
     - Généralement < μ Cinétique
     - Peut être négatif (effet lubrifiant)
+    
+    **δ/R typiques :**
+    - No-plowing : < 0.03
+    - Micro-plowing : 0.03-0.10
+    - Deep-plowing : > 0.10
     """)
 
 # Gestion des expériences existantes
