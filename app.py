@@ -653,4 +653,799 @@ def create_anti_pics_plots(metrics, experiment_name="Expérience"):
     # μ Cinétique
     fig_friction.add_trace(go.Scatter(
         x=ts['time'], 
-        y=ts
+        y=ts['mu_kinetic'],
+        mode='lines+markers',
+        name='μ Cinétique (corrigé)',
+        line=dict(color='red', width=3),
+        marker=dict(size=4)
+    ))
+    
+    # μ Rolling
+    fig_friction.add_trace(go.Scatter(
+        x=ts['time'], 
+        y=ts['mu_rolling'],
+        mode='lines+markers',
+        name='μ Rolling (corrigé)',
+        line=dict(color='blue', width=3),
+        marker=dict(size=4)
+    ))
+    
+    # Krr sans pics
+    fig_friction.add_trace(go.Scatter(
+        x=ts['time'], 
+        y=ts['krr_instantaneous'],
+        mode='lines+markers',
+        name='Krr (anti-pics)',
+        line=dict(color='orange', width=2),
+        marker=dict(size=3)
+    ))
+    
+    fig_friction.update_layout(
+        title=f"🚫 Coefficients de Friction SANS PICS - {experiment_name}",
+        xaxis_title="Temps (s)",
+        yaxis_title="Coefficient",
+        height=500
+    )
+    
+    st.plotly_chart(fig_friction, use_container_width=True)
+    
+    # === 3. VITESSES ET ACCÉLÉRATION ===
+    st.markdown("#### 🏃 Vitesses et Accélération vs Temps")
+    
+    fig_kinematics = make_subplots(
+        rows=1, cols=2,
+        subplot_titles=('Vitesse vs Temps', 'Accélération vs Temps')
+    )
+    
+    # Vitesse
+    fig_kinematics.add_trace(
+        go.Scatter(x=ts['time'], y=ts['velocity_mms'], 
+                  mode='lines', name='Vitesse', line=dict(color='green', width=3)),
+        row=1, col=1
+    )
+    
+    # Accélération
+    fig_kinematics.add_trace(
+        go.Scatter(x=ts['time'], y=ts['acceleration_mms2'], 
+                  mode='lines', name='Accélération', line=dict(color='red', width=2)),
+        row=1, col=2
+    )
+    
+    fig_kinematics.update_xaxes(title_text="Temps (s)")
+    fig_kinematics.update_yaxes(title_text="Vitesse (mm/s)", row=1, col=1)
+    fig_kinematics.update_yaxes(title_text="Accélération (mm/s²)", row=1, col=2)
+    fig_kinematics.update_layout(height=400, showlegend=False)
+    
+    st.plotly_chart(fig_kinematics, use_container_width=True)
+
+def create_krr_specialized_plots(experiments_data):
+    """📊 Graphiques Krr spécialisés : 1 avec eau, 1 avec angle"""
+    
+    if len(experiments_data) < 2:
+        st.warning("Au moins 2 expériences nécessaires pour les graphiques Krr")
+        return
+    
+    # Préparer données
+    plot_data = []
+    for exp_name, exp_data in experiments_data.items():
+        metrics = exp_data.get('metrics', {})
+        if metrics.get('Krr_global') is not None:
+            plot_data.append({
+                'Expérience': exp_name,
+                'Teneur_eau': exp_data.get('water_content', 0),
+                'Angle': exp_data.get('angle', 15),
+                'Krr': metrics.get('Krr_global'),
+                'Type_sphère': exp_data.get('sphere_type', 'Inconnue')
+            })
+    
+    if len(plot_data) < 2:
+        st.warning("Pas assez de données Krr valides")
+        return
+    
+    df_plot = pd.DataFrame(plot_data)
+    
+    st.markdown("### 📊 Graphiques Krr Spécialisés")
+    
+    col1, col2 = st.columns(2)
+    
+    # === GRAPHIQUE 1 : Krr vs Teneur en Eau ===
+    with col1:
+        fig_krr_eau = px.scatter(
+            df_plot,
+            x='Teneur_eau',
+            y='Krr',
+            color='Angle',
+            size=[20]*len(df_plot),  # Taille fixe
+            hover_data=['Expérience', 'Type_sphère'],
+            title="💧 Coefficient Krr vs Teneur en Eau",
+            labels={'Teneur_eau': 'Teneur en eau (%)', 'Krr': 'Coefficient Krr'},
+            color_continuous_scale='Viridis'
+        )
+        
+        # Ligne de tendance si possible
+        if len(df_plot) >= 3:
+            z = np.polyfit(df_plot['Teneur_eau'], df_plot['Krr'], 1)
+            p = np.poly1d(z)
+            x_line = np.linspace(df_plot['Teneur_eau'].min(), df_plot['Teneur_eau'].max(), 100)
+            fig_krr_eau.add_trace(go.Scatter(
+                x=x_line, y=p(x_line), mode='lines', name='Tendance',
+                line=dict(dash='dash', color='black', width=2)
+            ))
+        
+        st.plotly_chart(fig_krr_eau, use_container_width=True)
+    
+    # === GRAPHIQUE 2 : Krr vs Angle ===
+    with col2:
+        fig_krr_angle = px.scatter(
+            df_plot,
+            x='Angle',
+            y='Krr',
+            color='Teneur_eau',
+            size=[20]*len(df_plot),  # Taille fixe
+            hover_data=['Expérience', 'Type_sphère'],
+            title="📐 Coefficient Krr vs Angle d'Inclinaison",
+            labels={'Angle': 'Angle (°)', 'Krr': 'Coefficient Krr'},
+            color_continuous_scale='Plasma'
+        )
+        
+        # Ligne de tendance si possible
+        if len(df_plot) >= 3:
+            z = np.polyfit(df_plot['Angle'], df_plot['Krr'], 1)
+            p = np.poly1d(z)
+            x_line = np.linspace(df_plot['Angle'].min(), df_plot['Angle'].max(), 100)
+            fig_krr_angle.add_trace(go.Scatter(
+                x=x_line, y=p(x_line), mode='lines', name='Tendance',
+                line=dict(dash='dash', color='black', width=2)
+            ))
+        
+        st.plotly_chart(fig_krr_angle, use_container_width=True)
+
+def create_comparison_coefficients_plot(experiments_data):
+    """📊 Graphique de comparaison des coefficients en barres groupées"""
+    
+    if len(experiments_data) < 2:
+        st.warning("Au moins 2 expériences nécessaires pour la comparaison")
+        return
+    
+    # Préparer données pour graphique en barres groupées
+    exp_names = []
+    mu_kinetic_values = []
+    mu_rolling_values = []
+    mu_energetic_values = []
+    krr_values = []
+    water_contents = []
+    
+    for exp_name, exp_data in experiments_data.items():
+        metrics = exp_data.get('metrics', {})
+        
+        exp_names.append(f"{exp_name} ({exp_data.get('water_content', 0):.1f}% eau)")
+        mu_kinetic_values.append(metrics.get('mu_kinetic_avg', 0))
+        mu_rolling_values.append(metrics.get('mu_rolling_avg', 0))
+        mu_energetic_values.append(metrics.get('mu_energetic', 0))
+        krr_values.append(metrics.get('Krr_global', 0))
+        water_contents.append(exp_data.get('water_content', 0))
+    
+    # Créer le graphique en barres groupées
+    fig_comparison = go.Figure()
+    
+    # Créer subplot avec barres groupées pour chaque coefficient
+    coefficient_types = ['μ Cinétique', 'μ Rolling', 'μ Énergétique', 'Krr Global']
+    
+    for i, exp_name in enumerate(exp_names):
+        values = [mu_kinetic_values[i], mu_rolling_values[i], 
+                 mu_energetic_values[i], krr_values[i]]
+        
+        # Couleur selon teneur en eau
+        bar_color = 'darkblue' if water_contents[i] == 0 else 'lightblue'
+        
+        fig_comparison.add_trace(go.Bar(
+            x=coefficient_types,
+            y=values,
+            name=exp_name,
+            text=[f"{v:.4f}" if v < 10 else f"{v:.1f}" for v in values],
+            textposition='auto',
+            marker_color=bar_color
+        ))
+    
+    fig_comparison.update_layout(
+        title="📊 Comparaison Tous Coefficients",
+        xaxis_title="Type de Coefficient",
+        yaxis_title="Valeur du Coefficient",
+        barmode='group',
+        height=500
+    )
+    
+    st.plotly_chart(fig_comparison, use_container_width=True)
+
+def create_vitesses_vs_angle_plot(experiments_data):
+    """🏃 Graphique Vitesses vs Angle (style Image 1 utilisateur)"""
+    
+    if len(experiments_data) < 2:
+        st.warning("Au moins 2 expériences nécessaires")
+        return
+    
+    # Préparer données
+    plot_data = []
+    for exp_name, exp_data in experiments_data.items():
+        metrics = exp_data.get('metrics', {})
+        if metrics.get('v0_mms') is not None and metrics.get('vf_mms') is not None:
+            plot_data.append({
+                'Expérience': exp_name,
+                'Angle': exp_data.get('angle', 15),
+                'V0': metrics.get('v0_mms'),
+                'Vf': metrics.get('vf_mms'),
+                'Teneur_eau': exp_data.get('water_content', 0)
+            })
+    
+    if len(plot_data) < 2:
+        st.warning("Pas assez de données de vitesses")
+        return
+    
+    df_plot = pd.DataFrame(plot_data)
+    
+    st.markdown("#### 🏃 Vitesses vs Angle")
+    
+    fig_vitesses = go.Figure()
+    
+    # Vitesses initiales
+    fig_vitesses.add_trace(go.Scatter(
+        x=df_plot['Angle'],
+        y=df_plot['V0'],
+        mode='markers+lines',
+        name='V₀ (initiale)',
+        marker=dict(color='blue', size=10),
+        line=dict(color='blue', width=3)
+    ))
+    
+    # Vitesses finales
+    fig_vitesses.add_trace(go.Scatter(
+        x=df_plot['Angle'],
+        y=df_plot['Vf'],
+        mode='markers+lines',
+        name='Vf (finale)',
+        marker=dict(color='red', size=10),
+        line=dict(color='red', width=3)
+    ))
+    
+    fig_vitesses.update_layout(
+        title="🏃 Vitesses vs Angle",
+        xaxis_title="Angle (°)",
+        yaxis_title="Vitesse (mm/s)",
+        height=400,
+        plot_bgcolor='white',
+        xaxis=dict(gridcolor='lightgray'),
+        yaxis=dict(gridcolor='lightgray')
+    )
+    
+    st.plotly_chart(fig_vitesses, use_container_width=True)
+
+# ==================== INTERFACE UTILISATEUR PRINCIPALE ====================
+
+# Interface de chargement
+st.markdown("## 📂 Chargement et Analyse Anti-Pics")
+
+with st.expander("➕ Ajouter une nouvelle expérience (Version Anti-Pics)", expanded=True):
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        exp_name = st.text_input("Nom de l'expérience", value=f"Exp_{len(st.session_state.experiments_data)+1}")
+        water_content = st.number_input("Teneur en eau (%)", value=0.0, min_value=0.0, max_value=30.0, step=0.5)
+        angle = st.number_input("Angle de pente (°)", value=15.0, min_value=0.0, max_value=45.0, step=1.0)
+    
+    with col2:
+        sphere_type = st.selectbox("Type de sphère", ["Solide", "Creuse"])
+        sphere_mass_g = st.number_input("Masse sphère (g)", value=10.0, min_value=0.1, max_value=100.0)
+        sphere_radius_mm = st.number_input("Rayon sphère (mm)", value=15.0, min_value=5.0, max_value=50.0)
+    
+    uploaded_file = st.file_uploader(
+        "Charger le fichier de données de détection",
+        type=['csv'],
+        help="Fichier CSV avec colonnes: Frame, X_center, Y_center, Radius"
+    )
+    
+    if st.button("🚫 Analyser avec suppression des pics") and uploaded_file is not None:
+        
+        try:
+            # Chargement des données
+            df = pd.read_csv(uploaded_file)
+            
+            required_columns = ['Frame', 'X_center', 'Y_center', 'Radius']
+            if not all(col in df.columns for col in required_columns):
+                st.error(f"❌ Colonnes requises: {required_columns}")
+                st.error(f"📊 Colonnes trouvées: {list(df.columns)}")
+            else:
+                df_valid = df[(df['X_center'] != 0) & (df['Y_center'] != 0) & (df['Radius'] != 0)]
+                
+                if len(df_valid) < 15:
+                    st.error("❌ Pas assez de détections valides (<15)")
+                else:
+                    st.success(f"✅ {len(df)} frames chargées, {len(df_valid)} détections valides")
+                    
+                    # Détection automatique de l'angle
+                    filename = uploaded_file.name
+                    if 'D' in filename:
+                        try:
+                            angle_from_filename = float(filename.split('D')[0])
+                            if 5 <= angle_from_filename <= 45:
+                                angle = angle_from_filename
+                                st.info(f"🎯 Angle détecté automatiquement: {angle}°")
+                        except:
+                            pass
+                    
+                    # === CALCUL ANTI-PICS ===
+                    st.markdown("---")
+                    st.markdown("### 🚫 Analyse Anti-Pics des Coefficients de Friction")
+                    
+                    # Calcul avec auto-calibration
+                    avg_radius_px = df_valid['Radius'].mean()
+                    auto_calibration = avg_radius_px / sphere_radius_mm
+                    
+                    friction_metrics = calculate_friction_metrics_anti_pics(
+                        df_valid,
+                        fps=250.0,
+                        angle_deg=angle,
+                        sphere_mass_g=sphere_mass_g,
+                        sphere_radius_mm=sphere_radius_mm,
+                        pixels_per_mm=auto_calibration
+                    )
+                    
+                    if friction_metrics is not None:
+                        # === AFFICHAGE DES RÉSULTATS CORRIGÉS ===
+                        col1, col2, col3, col4 = st.columns(4)
+                        
+                        with col1:
+                            krr_val = safe_format_value(friction_metrics.get('Krr_global'), "{:.6f}")
+                            st.markdown(f"""
+                            <div class="anti-pics-card">
+                                <h3>📊 Krr Corrigé</h3>
+                                <h2>{krr_val}</h2>
+                                <p>Sans pics d'erreur</p>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        
+                        with col2:
+                            mu_kinetic_val = safe_format_value(friction_metrics.get('mu_kinetic_avg'), "{:.4f}")
+                            st.markdown(f"""
+                            <div class="metric-card" style="background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);">
+                                <h3>🔥 μ Cinétique</h3>
+                                <h2>{mu_kinetic_val}</h2>
+                                <p>Friction lissée</p>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        
+                        with col3:
+                            mu_rolling_val = safe_format_value(friction_metrics.get('mu_rolling_avg'), "{:.4f}")
+                            st.markdown(f"""
+                            <div class="metric-card" style="background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);">
+                                <h3>🎯 μ Rolling</h3>
+                                <h2>{mu_rolling_val}</h2>
+                                <p>Résistance stable</p>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        
+                        with col4:
+                            mu_energetic_val = safe_format_value(friction_metrics.get('mu_energetic'), "{:.4f}")
+                            st.markdown(f"""
+                            <div class="metric-card" style="background: linear-gradient(135deg, #9b59b6 0%, #8e44ad 100%);">
+                                <h3>⚡ μ Énergétique</h3>
+                                <h2>{mu_energetic_val}</h2>
+                                <p>Dissipation réaliste</p>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        
+                        # === GRAPHIQUES ANTI-PICS ===
+                        st.markdown("---")
+                        create_anti_pics_plots(friction_metrics, exp_name)
+                        
+                        # === SAUVEGARDE AMÉLIORÉE ===
+                        if st.button("💾 Sauvegarder cette expérience anti-pics"):
+                            st.session_state.experiments_data[exp_name] = {
+                                'data': df,
+                                'valid_data': df_valid,
+                                'water_content': water_content,
+                                'angle': angle,
+                                'sphere_type': sphere_type,
+                                'sphere_mass_g': sphere_mass_g,
+                                'sphere_radius_mm': sphere_radius_mm,
+                                'metrics': friction_metrics,
+                                'success_rate': len(df_valid) / len(df) * 100,
+                                'anti_pics': True  # Marquer comme version anti-pics
+                            }
+                            st.success(f"✅ Expérience '{exp_name}' sauvegardée (version anti-pics)!")
+                            st.success("🔄 Actualisation de l'interface...")
+                            st.rerun()
+                        
+                        # === EXPORT CSV ===
+                        if 'time_series' in friction_metrics:
+                            ts = friction_metrics['time_series']
+                            export_df = pd.DataFrame({
+                                'temps_s': ts['time'],
+                                'vitesse_mms': ts['velocity_mms'],
+                                'acceleration_mms2': ts['acceleration_mms2'],
+                                'mu_cinetique_lisse': ts['mu_kinetic'],
+                                'mu_rolling_lisse': ts['mu_rolling'],
+                                'mu_energetique': ts['mu_energetic'],
+                                'krr_sans_pics': ts['krr_instantaneous'],
+                                'force_resistance_mN': ts['resistance_force_mN']
+                            })
+                            
+                            csv_data = export_df.to_csv(index=False)
+                            st.download_button(
+                                label="📥 Télécharger données anti-pics (CSV)",
+                                data=csv_data,
+                                file_name=f"analyse_anti_pics_{exp_name}.csv",
+                                mime="text/csv"
+                            )
+                    
+        except Exception as e:
+            st.error(f"❌ Erreur lors du traitement: {str(e)}")
+
+# === TEST RAPIDE ===
+st.markdown("### 🧪 Test Rapide Anti-Pics")
+
+if st.button("🔬 Tester la suppression des pics (données simulées)"):
+    df_test = create_sample_data()
+    df_valid_test = df_test[(df_test['X_center'] != 0) & (df_test['Y_center'] != 0) & (df_test['Radius'] != 0)]
+    
+    st.info(f"Données simulées: {len(df_test)} frames, {len(df_valid_test)} détections valides")
+    
+    # Test anti-pics
+    friction_test = calculate_friction_metrics_anti_pics(df_valid_test, angle_deg=15)
+    
+    if friction_test:
+        st.success("✅ Test anti-pics réussi !")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Krr (sans pics)", safe_format_value(friction_test.get('Krr_global')))
+        with col2:
+            st.metric("μ Cinétique", safe_format_value(friction_test.get('mu_kinetic_avg'), '{:.4f}'))
+        with col3:
+            st.metric("μ Rolling", safe_format_value(friction_test.get('mu_rolling_avg'), '{:.4f}'))
+        with col4:
+            st.metric("μ Énergétique", safe_format_value(friction_test.get('mu_energetic'), '{:.4f}'))
+        
+        # Afficher l'efficacité
+        max_before = friction_test.get('max_krr_before_cleaning', 0)
+        max_after = friction_test.get('max_krr_after_cleaning', 0)
+        
+        if max_before > 0:
+            reduction = (max_before - max_after) / max_before * 100
+            st.success(f"🚫 Pics supprimés : Krr max réduit de {max_before:.2f} à {max_after:.6f} (-{reduction:.1f}%)")
+
+# === SECTION COMPARAISON AMÉLIORÉE ===
+if st.session_state.experiments_data:
+    st.markdown("---")
+    st.markdown("## 🔍 Comparaison Multi-Expériences Anti-Pics")
+    
+    # Résumé des expériences avec rafraîchissement automatique
+    exp_summary = []
+    for name, data in st.session_state.experiments_data.items():
+        metrics = data.get('metrics', {})
+        is_anti_pics = data.get('anti_pics', False)
+        exp_summary.append({
+            'Expérience': name,
+            'Eau (%)': data.get('water_content', 0),
+            'Angle (°)': data.get('angle', 15),
+            'Type': data.get('sphere_type', 'N/A'),
+            'Anti-Pics': "✅" if is_anti_pics else "❌",
+            'Krr': safe_format_value(metrics.get('Krr_global')),
+            'μ Cinétique': safe_format_value(metrics.get('mu_kinetic_avg'), '{:.4f}'),
+            'μ Rolling': safe_format_value(metrics.get('mu_rolling_avg'), '{:.4f}'),
+            'Succès (%)': safe_format_value(data.get('success_rate'), '{:.1f}')
+        })
+    
+    # Affichage forcé du tableau
+    st.dataframe(pd.DataFrame(exp_summary), use_container_width=True)
+    
+    st.markdown(f"**📊 Total expériences chargées : {len(st.session_state.experiments_data)}**")
+    
+    # === GRAPHIQUES STYLE VOS IMAGES (DISPONIBLES MÊME AVEC 1 EXPÉRIENCE) ===
+    st.markdown("---")
+    st.markdown("### 🎯 Graphiques Style Images de Référence")
+    
+    if len(st.session_state.experiments_data) >= 1:
+        st.success(f"✅ {len(st.session_state.experiments_data)} expérience(s) disponible(s) - Graphiques activés !")
+        create_image_style_plots(st.session_state.experiments_data)
+    # === COMPARAISON AVANCÉE (NÉCESSITE 2+ EXPÉRIENCES) ===
+    if len(st.session_state.experiments_data) >= 2:
+        st.markdown("---")
+        st.markdown("### 🔬 Comparaison Avancée (2+ expériences)")
+        
+        # Sélection pour comparaison
+        selected_experiments = st.multiselect(
+            "Choisir les expériences à comparer :",
+            options=list(st.session_state.experiments_data.keys()),
+            default=list(st.session_state.experiments_data.keys())
+        )
+        
+        if len(selected_experiments) >= 2:
+            filtered_data = {k: v for k, v in st.session_state.experiments_data.items() if k in selected_experiments}
+            
+            # === GRAPHIQUES KRR SPÉCIALISÉS ===
+            create_krr_specialized_plots(filtered_data)
+            
+            # === GRAPHIQUE VITESSES VS ANGLE ===
+            st.markdown("### 🏃 Vitesses vs Angle (Comparaison)")
+            create_vitesses_vs_angle_plot(filtered_data)
+            
+            # === GRAPHIQUE COMPARAISON COEFFICIENTS ===
+            st.markdown("### 📊 Comparaison Tous Coefficients")
+            create_comparison_coefficients_plot(filtered_data)
+            
+            # Export comparaison
+            comparison_data = []
+            for exp_name, exp_data in filtered_data.items():
+                metrics = exp_data.get('metrics', {})
+                comparison_data.append({
+                    'Expérience': exp_name,
+                    'Teneur_eau': exp_data.get('water_content', 0),
+                    'Angle': exp_data.get('angle', 15),
+                    'Krr': metrics.get('Krr_global'),
+                    'mu_kinetic_avg': metrics.get('mu_kinetic_avg'),
+                    'mu_rolling_avg': metrics.get('mu_rolling_avg'),
+                    'mu_energetic': metrics.get('mu_energetic'),
+                    'anti_pics': exp_data.get('anti_pics', False)
+                })
+            
+            if comparison_data:
+                comparison_df = pd.DataFrame(comparison_data)
+                csv_comparison = comparison_df.to_csv(index=False)
+                st.download_button(
+                    label="📥 Télécharger comparaison anti-pics (CSV)",
+                    data=csv_comparison,
+                    file_name="comparaison_anti_pics.csv",
+                    mime="text/csv"
+                )
+        else:
+            st.info("Sélectionnez au moins 2 expériences pour la comparaison avancée")
+    
+    else:
+        st.info("💡 Sauvegardez une 2ème expérience pour activer la comparaison avancée")
+    
+    # === BOUTON QUICK TEST POUR DÉMONSTRATION ===
+    st.markdown("---")
+    st.markdown("### 🚀 Test Rapide des Graphiques")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if st.button("🧪 Ajouter expérience de test 1 (10°, 0% eau)"):
+            test_metrics_1 = {
+                'Krr_global': 0.045,
+                'mu_kinetic_avg': 0.012,
+                'mu_rolling_avg': 0.008,
+                'mu_energetic': 0.035
+            }
+            
+            st.session_state.experiments_data['Test_10D_0W'] = {
+                'water_content': 0.0,
+                'angle': 10.0,
+                'sphere_type': 'Test',
+                'metrics': test_metrics_1,
+                'success_rate': 85.0,
+                'anti_pics': True
+            }
+            st.success("✅ Expérience test 1 ajoutée!")
+            st.rerun()
+    
+    with col2:
+        if st.button("🧪 Ajouter expérience de test 2 (20°, 5% eau)"):
+            test_metrics_2 = {
+                'Krr_global': 0.067,
+                'mu_kinetic_avg': 0.018,
+                'mu_rolling_avg': 0.012,
+                'mu_energetic': 0.042
+            }
+            
+            st.session_state.experiments_data['Test_20D_5W'] = {
+                'water_content': 5.0,
+                'angle': 20.0,
+                'sphere_type': 'Test',
+                'metrics': test_metrics_2,
+                'success_rate': 92.0,
+                'anti_pics': True
+            }
+            st.success("✅ Expérience test 2 ajoutée!")
+            st.rerun()
+    
+    with col3:
+        if st.button("⚠️ Ajouter expérience avec valeurs aberrantes"):
+            test_metrics_aberrant = {
+                'Krr_global': 0.052,
+                'mu_kinetic_avg': 0.015,
+                'mu_rolling_avg': 0.009,
+                'mu_energetic': 185.5  # Valeur aberrante !
+            }
+            
+            st.session_state.experiments_data['Test_Aberrant'] = {
+                'water_content': 0.0,
+                'angle': 15.0,
+                'sphere_type': 'Test',
+                'metrics': test_metrics_aberrant,
+                'success_rate': 78.0,
+                'anti_pics': False  # Pas anti-pics = valeurs aberrantes
+            }
+            st.success("⚠️ Expérience avec valeurs aberrantes ajoutée!")
+            st.rerun()
+
+    # Gestion des expériences dans la sidebar
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### 🗂️ Gestion Expériences")
+    
+    exp_to_remove = st.sidebar.selectbox(
+        "Supprimer :",
+        options=["Aucune"] + list(st.session_state.experiments_data.keys())
+    )
+    
+    if exp_to_remove != "Aucune" and st.sidebar.button("🗑️ Supprimer"):
+        del st.session_state.experiments_data[exp_to_remove]
+        st.success(f"Expérience '{exp_to_remove}' supprimée!")
+        st.rerun()
+    
+    if st.sidebar.button("🧹 Effacer Tout"):
+        st.session_state.experiments_data = {}
+        st.success("Toutes les expériences supprimées!")
+        st.rerun()
+
+else:
+    st.markdown("""
+    ## 🚫 Guide d'Utilisation - Version Anti-Pics
+    
+    ### 🎯 **Comment Voir les Graphiques Style Images :**
+    
+    #### **📋 Étapes Simples :**
+    1. **📂 Chargez UN fichier** CSV avec vos données
+    2. **⚙️ Configurez les paramètres** (angle, eau, etc.)
+    3. **🚫 Cliquez "Analyser avec suppression des pics"**
+    4. **💾 Cliquez "Sauvegarder cette expérience"**
+    5. **📊 Descendez à la section "Graphiques Style Images"** 
+    
+    #### **🚀 OU Test Rapide :**
+    - **🧪 Utilisez les boutons "Ajouter expérience de test"** ci-dessous
+    - **Graphiques visibles immédiatement** après ajout
+    
+    ### ✨ **Améliorations Anti-Pics :**
+    
+    #### **🚫 Suppression Maximale des Pics :**
+    - **Nettoyage ultra-agressif** : 35% de suppression de chaque côté
+    - **Filtre Savitzky-Golay** : Lissage polynomial avancé
+    - **Suppression des outliers** : Median Absolute Deviation (MAD)
+    - **Plafonnement physique** : Krr max = 1.0
+    
+    #### **📊 Graphiques Spécialisés :**
+    1. **Krr vs Teneur en Eau** (style votre image 1)
+    2. **Comparaison coefficients** (style votre image 2 - avec option valeurs aberrantes)
+    3. **Krr vs Angle** (graphique supplémentaire)
+    
+    Cette version **élimine définitivement** les pics d'erreur !
+    """)
+    
+    # === BOUTONS DE TEST POUR DÉMONSTRATION ===
+    st.markdown("### 🚀 Test Rapide des Graphiques (Sans Upload)")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if st.button("🧪 Test 1: Exp 10° + 0% eau"):
+            test_metrics_1 = {
+                'Krr_global': 0.045,
+                'mu_kinetic_avg': 0.012,
+                'mu_rolling_avg': 0.008,
+                'mu_energetic': 0.035
+            }
+            
+            st.session_state.experiments_data['Test_10D_0W'] = {
+                'water_content': 0.0,
+                'angle': 10.0,
+                'sphere_type': 'Test',
+                'metrics': test_metrics_1,
+                'success_rate': 85.0,
+                'anti_pics': True
+            }
+            st.success("✅ Expérience test 1 ajoutée!")
+            st.rerun()
+    
+    with col2:
+        if st.button("🧪 Test 2: Exp 20° + 5% eau"):
+            test_metrics_2 = {
+                'Krr_global': 0.067,
+                'mu_kinetic_avg': 0.018,
+                'mu_rolling_avg': 0.012,
+                'mu_energetic': 0.042
+            }
+            
+            st.session_state.experiments_data['Test_20D_5W'] = {
+                'water_content': 5.0,
+                'angle': 20.0,
+                'sphere_type': 'Test',
+                'metrics': test_metrics_2,
+                'success_rate': 92.0,
+                'anti_pics': True
+            }
+            st.success("✅ Expérience test 2 ajoutée!")
+            st.rerun()
+    
+    with col3:
+        if st.button("⚠️ Test 3: Valeurs aberrantes"):
+            test_metrics_aberrant = {
+                'Krr_global': 0.052,
+                'mu_kinetic_avg': 0.015,
+                'mu_rolling_avg': 0.009,
+                'mu_energetic': 185.5  # Valeur aberrante !
+            }
+            
+            st.session_state.experiments_data['Test_Aberrant'] = {
+                'water_content': 0.0,
+                'angle': 15.0,
+                'sphere_type': 'Test',
+                'metrics': test_metrics_aberrant,
+                'success_rate': 78.0,
+                'anti_pics': False  # Pas anti-pics = valeurs aberrantes
+            }
+            st.success("⚠️ Expérience avec valeurs aberrantes ajoutée!")
+            st.rerun()
+
+# Sidebar avec informations de debug améliorées
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 🚫 Informations Anti-Pics")
+
+if SCIPY_AVAILABLE:
+    st.sidebar.success("✅ SciPy disponible - Filtre Savitzky-Golay actif")
+else:
+    st.sidebar.warning("⚠️ SciPy non disponible - Lissage basique")
+
+if st.session_state.experiments_data:
+    st.sidebar.markdown(f"**Expériences chargées :** {len(st.session_state.experiments_data)}")
+    
+    anti_pics_count = sum(1 for data in st.session_state.experiments_data.values() if data.get('anti_pics', False))
+    st.sidebar.markdown(f"**Avec anti-pics :** {anti_pics_count}")
+    
+    for name, data in st.session_state.experiments_data.items():
+        with st.sidebar.expander(f"📋 {name}"):
+            is_anti_pics = data.get('anti_pics', False)
+            st.write(f"**Anti-Pics :** {'✅' if is_anti_pics else '❌'}")
+            st.write(f"**Eau :** {data.get('water_content', 'N/A')}%")
+            st.write(f"**Angle :** {data.get('angle', 'N/A')}°")
+            
+            metrics = data.get('metrics', {})
+            krr_val = metrics.get('Krr_global')
+            if krr_val is not None and not pd.isna(krr_val):
+                st.write(f"**Krr :** {krr_val:.6f}")
+                
+                if krr_val <= 1.0:
+                    st.success("✅ Krr physique")
+                else:
+                    st.error("⚠️ Krr > 1.0")
+            
+            # Afficher réduction des pics si disponible
+            max_before = metrics.get('max_krr_before_cleaning')
+            max_after = metrics.get('max_krr_after_cleaning')
+            
+            if max_before and max_after and max_before > 0:
+                reduction = (max_before - max_after) / max_before * 100
+                st.write(f"**Réduction pics :** {reduction:.1f}%")
+
+else:
+    st.sidebar.info("Aucune expérience chargée")
+    st.sidebar.markdown("👆 **Utilisez les boutons de test** pour voir les graphiques immédiatement")
+
+# Footer avec statut anti-pics
+st.markdown("---")
+st.markdown(f"""
+<div style="text-align: center; background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; padding: 2rem; border-radius: 10px; margin: 1rem 0;">
+    <h2>🚫 Analyseur de Friction Anti-Pics - Version Finale Complète</h2>
+    <p><strong>🔥 Fonctionnalités Anti-Pics :</strong></p>
+    <p>🚫 Suppression ultra-agressif des pics (35% chaque côté)<br>
+    📊 Filtre Savitzky-Golay pour lissage optimal<br>
+    📈 Suppression outliers par Median Absolute Deviation<br>
+    🎯 Plafonnement physique des valeurs Krr<br>
+    📊 Graphiques style vos images (disponibles avec 1+ expérience)<br>
+    📉 Option valeurs aberrantes pour reproduction Image 2<br>
+    ✅ Validation physique complète</p>
+    <p><em>🎯 Fini les pics à 100+ et μ énergétique à 122-174 !</em></p>
+    <p><strong>📊 Statut :</strong> {len(st.session_state.experiments_data)} expériences chargées</p>
+    <p><strong>🚫 Scipy :</strong> {'✅ Disponible' if SCIPY_AVAILABLE else '❌ Non disponible'}</p>
+    <p><strong>🎯 Astuce :</strong> Utilisez les boutons de test pour voir les graphiques immédiatement !</p>
+</div>
+""", unsafe_allow_html=True)
