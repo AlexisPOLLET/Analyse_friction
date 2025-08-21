@@ -355,410 +355,7 @@ def calculate_advanced_friction_metrics(df_valid, fps=250, angle_deg=15.0,
     F_gravity_tangential = mass_kg * g * np.sin(angle_rad)  # Force motrice
     F_gravity_normal = mass_kg * g * np.cos(angle_rad)      # Force normale
     F_resistance = mass_kg * np.abs(a_tangential)           # Force de résistance
-    F_net = mass_kg * a_tangential                          # Filtrer les détections valides
-            df_valid = df[(df['X_center'] != 0) & (df['Y_center'] != 0) & (df['Radius'] != 0)]
-            
-            if len(df_valid) < 10:
-                st.warning("⚠️ Pas assez de données valides pour l'analyse")
-                return None
-            
-            # Afficher les informations de base
-            st.info(f"""
-            📊 **Analyse des données** :
-            - Fichier : {uploaded_file.name}
-            - Frames totales : {len(df)}
-            - Détections valides : {len(df_valid)}
-            - Taux de succès : {len(df_valid)/len(df)*100:.1f}%
-            - Rayon moyen détecté : {df_valid['Radius'].mean():.1f} pixels
-            """)
-            
-            # Calculer les métriques enrichies
-            metrics = calculate_friction_metrics_enhanced(df_valid, water_content, angle, sphere_type)
-            
-            if metrics is None:
-                st.error("❌ Impossible de calculer les métriques pour cette expérience")
-                return None
-            
-            # Afficher immédiatement l'analyse de friction avancée
-            st.markdown("---")
-            create_friction_analysis_section(metrics, experiment_name)
-            
-            return {
-                'name': experiment_name,
-                'data': df,
-                'valid_data': df_valid,
-                'water_content': water_content,
-                'angle': angle,
-                'sphere_type': sphere_type,
-                'metrics': metrics,
-                'success_rate': len(df_valid) / len(df) * 100
-            }
-        except Exception as e:
-            st.error(f"❌ Erreur lors du chargement du fichier: {str(e)}")
-            return None
-    return None
-
-# ==================== INTERFACE UTILISATEUR ====================
-
-# Interface de chargement
-st.markdown("## 📂 Chargement des Données Expérimentales")
-
-with st.expander("➕ Ajouter une nouvelle expérience", expanded=True):
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        exp_name = st.text_input("Nom de l'expérience", value=f"Exp_{len(st.session_state.experiments_data)+1}")
-        water_content = st.number_input("Teneur en eau (%)", value=0.0, min_value=0.0, max_value=30.0, step=0.5)
-        angle = st.number_input("Angle de pente (°)", value=15.0, min_value=0.0, max_value=45.0, step=1.0)
-        st.help("💡 Si votre fichier s'appelle '20D_0W_3.csv', utilisez 20° pour l'angle")
-    
-    with col2:
-        sphere_type = st.selectbox("Type de sphère", ["Solide", "Creuse"])
-        
-        with st.expander("⚙️ Paramètres avancés (optionnel)"):
-            manual_radius = st.number_input("Rayon sphère (mm)", value=15.0, min_value=5.0, max_value=50.0)
-            manual_calibration = st.number_input("Calibration (px/mm)", value=5.0, min_value=1.0, max_value=20.0)
-            st.info("Laissez ces valeurs par défaut pour la calibration automatique")
-    
-    uploaded_file = st.file_uploader(
-        "Charger le fichier de données de détection",
-        type=['csv'],
-        help="Fichier CSV avec colonnes: Frame, X_center, Y_center, Radius"
-    )
-    
-    if st.button("📊 Ajouter l'expérience") and uploaded_file is not None:
-        
-        # Détecter l'angle depuis le nom du fichier si possible
-        filename = uploaded_file.name
-        if 'D' in filename:
-            try:
-                angle_from_filename = int(filename.split('D')[0])
-                if 5 <= angle_from_filename <= 45:
-                    angle = angle_from_filename
-                    st.info(f"🎯 Angle détecté automatiquement depuis le nom du fichier: {angle}°")
-            except:
-                pass
-        
-        exp_data = load_detection_data_enhanced(uploaded_file, exp_name, water_content, angle, sphere_type)
-        
-        if exp_data:
-            st.session_state.experiments_data[exp_name] = exp_data
-            st.success(f"✅ Expérience '{exp_name}' ajoutée avec succès!")
-            
-            # Afficher un résumé des résultats
-            metrics = exp_data['metrics']
-            st.markdown(f"""
-            ### 📋 Résumé des Résultats
-            
-            **Coefficient Krr :** {safe_format_value(metrics.get('Krr'))}
-            
-            **Coefficients de Friction :**
-            - μ Cinétique : {safe_format_value(metrics.get('mu_kinetic_avg'), '{:.4f}')}
-            - μ Rolling : {safe_format_value(metrics.get('mu_rolling_avg'), '{:.4f}')}
-            - μ Énergétique : {safe_format_value(metrics.get('mu_energetic'), '{:.4f}')}
-            
-            **Vitesses :**
-            - Initiale : {safe_format_value(metrics.get('v0_mms'), '{:.1f}')} mm/s
-            - Finale : {safe_format_value(metrics.get('vf_mms'), '{:.1f}')} mm/s
-            - Décélération : {safe_format_value(metrics.get('deceleration_percent'), '{:.1f}')}%
-            
-            **Distance parcourue :** {safe_format_value(metrics.get('total_distance_mm'), '{:.1f}')} mm
-            
-            **Calibration utilisée :** {safe_format_value(metrics.get('calibration_px_per_mm'), '{:.2f}')} px/mm
-            """)
-            
-            st.rerun()
-
-# Test rapide
-st.markdown("### 🧪 Test Rapide")
-
-if st.button("🔬 Tester avec données simulées (20°, 0% eau)"):
-    # Créer des données simulées réalistes
-    frames = list(range(1, 108))
-    data = []
-    
-    for frame in frames:
-        if frame < 9:
-            data.append([frame, 0, 0, 0])
-        elif frame in [30, 31]:
-            data.append([frame, 0, 0, 0])
-        else:
-            progress = (frame - 9) / (107 - 9)
-            x = 1240 - progress * 200 - progress**2 * 100
-            y = 680 + progress * 20 + np.random.normal(0, 1)
-            radius = 25 + np.random.normal(0, 2)
-            data.append([frame, max(0, int(x)), max(0, int(y)), max(18, min(35, int(radius)))])
-    
-    df_test = pd.DataFrame(data, columns=['Frame', 'X_center', 'Y_center', 'Radius'])
-    df_valid_test = df_test[(df_test['X_center'] != 0) & (df_test['Y_center'] != 0) & (df_test['Radius'] != 0)]
-    
-    st.info(f"Données simulées créées: {len(df_test)} frames, {len(df_valid_test)} détections valides")
-    
-    # Test du calcul
-    metrics_test = calculate_friction_metrics_enhanced(df_valid_test, 0.0, 20.0, "Solide")
-    
-    if metrics_test:
-        st.success("✅ Test réussi ! Le calcul de friction fonctionne.")
-        
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.metric("Krr", safe_format_value(metrics_test.get('Krr')))
-        with col2:
-            st.metric("μ Cinétique", safe_format_value(metrics_test.get('mu_kinetic_avg'), '{:.4f}'))
-        with col3:
-            st.metric("μ Rolling", safe_format_value(metrics_test.get('mu_rolling_avg'), '{:.4f}'))
-        with col4:
-            st.metric("μ Énergétique", safe_format_value(metrics_test.get('mu_energetic'), '{:.4f}'))
-
-# Affichage des expériences
-if st.session_state.experiments_data:
-    st.markdown("### 📋 Expériences Chargées")
-    
-    exp_summary = []
-    for name, data in st.session_state.experiments_data.items():
-        exp_summary.append({
-            'Expérience': name,
-            'Teneur en eau (%)': data['water_content'],
-            'Angle (°)': data['angle'],
-            'Type de sphère': data['sphere_type'],
-            'Krr': safe_format_value(data['metrics'].get('Krr')),
-            'μ Cinétique': safe_format_value(data['metrics'].get('mu_kinetic_avg'), '{:.4f}'),
-            'μ Rolling': safe_format_value(data['metrics'].get('mu_rolling_avg'), '{:.4f}'),
-            'Taux de succès (%)': safe_format_value(data.get('success_rate'), '{:.1f}')
-        })
-    
-    st.dataframe(pd.DataFrame(exp_summary), use_container_width=True)
-    
-    # Sélection pour comparaison
-    st.markdown("### 🔍 Sélection pour Comparaison")
-    selected_experiments = st.multiselect(
-        "Choisir les expériences à comparer :",
-        options=list(st.session_state.experiments_data.keys()),
-        default=list(st.session_state.experiments_data.keys())
-    )
-    
-    if len(selected_experiments) >= 2:
-        st.markdown("---")
-        st.markdown("## 📊 Analyse Comparative Standard")
-        
-        # Préparer les données pour la comparaison standard
-        comparison_data = []
-        for exp_name in selected_experiments:
-            exp = st.session_state.experiments_data[exp_name]
-            metrics = exp['metrics']
-            
-            comparison_data.append({
-                'Expérience': exp_name,
-                'Teneur_eau': exp['water_content'],
-                'Angle': exp['angle'],
-                'Type_sphère': exp['sphere_type'],
-                'Krr': metrics.get('Krr'),
-                'v0_mms': metrics.get('v0_mms'),
-                'vf_mms': metrics.get('vf_mms'),
-                'total_distance_mm': metrics.get('total_distance_mm'),
-                'deceleration_percent': metrics.get('deceleration_percent'),
-                'success_rate': exp.get('success_rate')
-            })
-        
-        comp_df = pd.DataFrame(comparison_data)
-        
-        # Graphiques de comparaison standard
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # Krr vs Teneur en eau
-            valid_krr = comp_df.dropna(subset=['Krr'])
-            if len(valid_krr) > 0:
-                try:
-                    fig_krr = px.scatter(
-                        valid_krr, 
-                        x='Teneur_eau', 
-                        y='Krr',
-                        color='Angle',
-                        hover_data=['Expérience'],
-                        title="🔍 Coefficient Krr vs Teneur en Eau"
-                    )
-                    fig_krr.update_layout(height=400)
-                    st.plotly_chart(fig_krr, use_container_width=True)
-                except Exception as e:
-                    st.error(f"Erreur création graphique Krr: {str(e)}")
-        
-        with col2:
-            # Vitesses vs Angle
-            valid_velocities = comp_df.dropna(subset=['v0_mms', 'vf_mms'])
-            if len(valid_velocities) > 0:
-                try:
-                    fig_vel = go.Figure()
-                    fig_vel.add_trace(go.Scatter(
-                        x=valid_velocities['Angle'], 
-                        y=valid_velocities['v0_mms'],
-                        mode='markers+lines', 
-                        name='V₀ (initiale)',
-                        marker=dict(color='blue', size=10)
-                    ))
-                    fig_vel.add_trace(go.Scatter(
-                        x=valid_velocities['Angle'], 
-                        y=valid_velocities['vf_mms'],
-                        mode='markers+lines', 
-                        name='Vf (finale)',
-                        marker=dict(color='red', size=10)
-                    ))
-                    fig_vel.update_layout(
-                        title="🏃 Vitesses vs Angle",
-                        xaxis_title="Angle (°)",
-                        yaxis_title="Vitesse (mm/s)",
-                        height=400
-                    )
-                    st.plotly_chart(fig_vel, use_container_width=True)
-                except Exception as e:
-                    st.error(f"Erreur création graphique vitesses: {str(e)}")
-        
-        # NOUVELLE SECTION: Comparaison avancée des frictions
-        st.markdown("---")
-        create_friction_comparison_section(selected_experiments)
-    
-    elif len(selected_experiments) == 1:
-        st.info("📊 Sélectionnez au moins 2 expériences pour effectuer une comparaison")
-
-# Sidebar avec aide
-st.sidebar.markdown("### 🔧 Aide au Dépannage")
-
-with st.sidebar.expander("❌ Problèmes Fréquents"):
-    st.markdown("""
-    **Krr = N/A ou erreur :**
-    - Vérifiez l'angle (20° pour `20D_0W_3.csv`)
-    - Assurez-vous d'avoir >10 détections valides
-    - Vérifiez que la sphère décélère
-    
-    **Vitesse finale > initiale :**
-    - Mauvaise calibration
-    - Angle incorrect
-    - Données corrompues
-    
-    **Coefficients de friction étranges :**
-    - Vérifiez les paramètres physiques
-    - Contrôlez la calibration automatique
-    """)
-
-with st.sidebar.expander("🎯 Valeurs Attendues"):
-    st.markdown("""
-    **Krr typiques :**
-    - Sols secs : 0.03-0.07
-    - Sols humides : 0.05-0.12
-    
-    **μ Cinétique typiques :**
-    - Sable sec : 0.2-0.4
-    - Sable humide : 0.3-0.6
-    
-    **μ Rolling typiques :**
-    - Généralement < μ Cinétique
-    - Peut être négatif (effet lubrifiant)
-    """)
-
-# Gestion des expériences existantes
-if st.session_state.experiments_data:
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("### 📊 Expériences Chargées")
-    
-    for name, data in st.session_state.experiments_data.items():
-        with st.sidebar.expander(f"📋 {name}"):
-            st.write(f"**Eau :** {data['water_content']}%")
-            st.write(f"**Angle :** {data['angle']}°")
-            st.write(f"**Type :** {data['sphere_type']}")
-            
-            krr_val = data['metrics'].get('Krr')
-            if krr_val is not None and not pd.isna(krr_val):
-                st.write(f"**Krr :** {krr_val:.6f}")
-                if 0.03 <= krr_val <= 0.15:
-                    st.success("✅ Krr OK")
-                else:
-                    st.warning("⚠️ Krr inhabituel")
-            else:
-                st.error("❌ Krr non calculé")
-            
-            # Afficher coefficients de friction
-            mu_kinetic = data['metrics'].get('mu_kinetic_avg')
-            if mu_kinetic is not None:
-                st.write(f"**μ Cinétique :** {mu_kinetic:.4f}")
-    
-    # Boutons de gestion
-    st.sidebar.markdown("---")
-    exp_to_remove = st.sidebar.selectbox(
-        "Supprimer une expérience :",
-        options=["Aucune"] + list(st.session_state.experiments_data.keys())
-    )
-    
-    if exp_to_remove != "Aucune" and st.sidebar.button("🗑️ Supprimer"):
-        del st.session_state.experiments_data[exp_to_remove]
-        st.success(f"Expérience '{exp_to_remove}' supprimée!")
-        st.rerun()
-    
-    if st.sidebar.button("🧹 Effacer Tout"):
-        st.session_state.experiments_data = {}
-        st.success("Toutes les expériences supprimées!")
-        st.rerun()
-
-# Instructions d'utilisation si pas d'expériences
-else:
-    st.markdown("""
-    ## 🚀 Instructions d'Utilisation - Analyseur de Friction Complet
-    
-    ### 🔥 **Nouvelles Fonctionnalités de Friction :**
-    
-    #### **4 Coefficients de Friction Calculés :**
-    1. **🔥 μ Cinétique** : Friction directe grain-sphère (`F_résistance / F_normale`)
-    2. **🎯 μ Rolling** : Résistance pure au roulement (`μ_cinétique - tan(angle)`)
-    3. **⚡ μ Énergétique** : Basé sur dissipation d'énergie (`E_dissipée / (F_normale × distance)`)
-    4. **📊 Krr Référence** : Coefficient traditionnel de résistance au roulement
-    
-    #### **Graphiques Automatiques :**
-    - **📈 Coefficients vs Temps** : Évolution temporelle de tous les coefficients
-    - **⚖️ Analyse des Forces** : Forces, puissance et énergie dissipée vs temps
-    - **📊 Histogrammes** : Distribution statistique des coefficients
-    - **🔗 Corrélations** : Relations vitesse-friction et entre coefficients
-    
-    #### **Analyses Avancées Multi-Expériences :**
-    - **💧 Effet Humidité** : Impact de la teneur en eau sur chaque coefficient
-    - **📐 Effet Angle** : Influence de l'inclinaison sur la friction
-    - **📊 Variabilité** : Stabilité temporelle et écarts-types
-    - **🎯 Insights Automatiques** : Détection des tendances et corrélations
-    
-    ### 📋 **Pour Commencer :**
-    
-    1. **📂 Chargez votre fichier CSV** (Frame, X_center, Y_center, Radius)
-    2. **📊 L'analyse de friction apparaît automatiquement** après le diagnostic Krr
-    3. **🔍 Comparez plusieurs expériences** pour voir les effets humidité/angle
-    4. **💾 Exportez les résultats** : CSV détaillé + rapport complet
-    
-    ### 💡 **Pour votre fichier `20D_0W_3.csv` :**
-    
-    - **Angle :** 20° (détection automatique depuis le nom)
-    - **Humidité :** 0% (sols secs)
-    - **Coefficients attendus :** μ cinétique ~0.2-0.4, μ rolling variable, Krr ~0.04-0.08
-    
-    ### 🎯 **Résultats Attendus :**
-    
-    Vous obtiendrez automatiquement :
-    - ✅ **4 cartes résumé** style dashboard avec tous les coefficients
-    - ✅ **Graphique coefficients vs temps** (votre demande principale)
-    - ✅ **Analyse forces et énergies** 
-    - ✅ **Distributions statistiques**
-    - ✅ **Export complet** pour analyse externe
-    
-    Ce système offre l'analyse de friction grain-sphère **la plus complète** disponible !
-    """)
-
-# Footer
-st.markdown("---")
-st.markdown("""
-<div style="text-align: center; color: #666; padding: 1rem;">
-    🎓 <strong>Analyseur Avancé de Friction Grain-Sphère</strong><br>
-    <em>🔥 Analyse complète des coefficients de friction temporels - Université d'Osaka</em><br>
-    📧 Département des Sciences de la Terre Cosmique<br>
-    🔬 <strong>Fonctionnalités :</strong> 4 coefficients de friction, graphiques temporels, analyses multi-expériences, export complet
-</div>
-""", unsafe_allow_html=True) Force nette
+    F_net = mass_kg * a_tangential                          # Force nette
     
     # === COEFFICIENTS DE FRICTION TEMPORELS ===
     
@@ -1546,123 +1143,6 @@ def create_friction_comparison_section(selected_experiments):
     display_friction_df = display_friction_df[display_columns].rename(columns=column_names)
     
     st.dataframe(display_friction_df, use_container_width=True)
-    
-    # === ANALYSE AUTOMATIQUE DES FRICTIONS ===
-    
-    st.markdown("### 🎯 Analyse Automatique des Frictions")
-    
-    friction_insights = []
-    
-    # Analyse de l'effet de l'humidité sur μ cinétique
-    valid_water_kinetic = friction_comp_df.dropna(subset=['Teneur_eau', 'mu_kinetic_avg'])
-    if len(valid_water_kinetic) >= 2:
-        try:
-            correlation = valid_water_kinetic[['Teneur_eau', 'mu_kinetic_avg']].corr().iloc[0, 1]
-            if not pd.isna(correlation):
-                if correlation > 0.3:
-                    friction_insights.append({
-                        'type': 'Effet Humidité sur μ Cinétique',
-                        'result': 'AUGMENTATION de la friction cinétique avec humidité',
-                        'value': f'r = {correlation:.3f}',
-                        'explanation': 'Les ponts capillaires augmentent la friction directe grain-sphère'
-                    })
-                elif correlation < -0.3:
-                    friction_insights.append({
-                        'type': 'Effet Humidité sur μ Cinétique',
-                        'result': 'DIMINUTION de la friction cinétique avec humidité',
-                        'value': f'r = {correlation:.3f}',
-                        'explanation': 'L\'eau agit comme lubrifiant réduisant la friction grain-sphère'
-                    })
-        except:
-            pass
-    
-    # Analyse de la variabilité
-    if 'mu_kinetic_std' in friction_comp_df.columns:
-        avg_variability = friction_comp_df['mu_kinetic_std'].mean()
-        if avg_variability > 0.1:
-            friction_insights.append({
-                'type': 'Variabilité de Friction',
-                'result': 'FORTE variabilité des coefficients de friction',
-                'value': f'σ moyen = {avg_variability:.4f}',
-                'explanation': 'Friction non-uniforme, conditions variables pendant l\'expérience'
-            })
-        elif avg_variability < 0.05:
-            friction_insights.append({
-                'type': 'Variabilité de Friction',
-                'result': 'FAIBLE variabilité des coefficients de friction',
-                'value': f'σ moyen = {avg_variability:.4f}',
-                'explanation': 'Friction uniforme, conditions stables pendant l\'expérience'
-            })
-    
-    # Meilleur coefficient de friction
-    if 'mu_kinetic_avg' in friction_comp_df.columns:
-        best_kinetic_idx = friction_comp_df['mu_kinetic_avg'].idxmax()
-        best_kinetic_exp = friction_comp_df.loc[best_kinetic_idx]
-        friction_insights.append({
-            'type': 'Performance Optimale',
-            'result': f'Plus forte friction cinétique: {best_kinetic_exp["Expérience"]}',
-            'value': f'μ = {best_kinetic_exp["mu_kinetic_avg"]:.4f}',
-            'explanation': f'Conditions: {best_kinetic_exp["Teneur_eau"]}% eau, {best_kinetic_exp["Angle"]}° angle'
-        })
-    
-    # Affichage des insights
-    for insight in friction_insights:
-        if 'AUGMENTATION' in insight['result']:
-            card_class = "warning-card"
-        elif 'DIMINUTION' in insight['result']:
-            card_class = "diagnostic-card"
-        elif 'FORTE' in insight['result']:
-            card_class = "error-card"
-        else:
-            card_class = "diagnostic-card"
-        
-        st.markdown(f"""
-        <div class="{card_class}">
-            <h4>🔍 {insight['type']}</h4>
-            <p><strong>{insight['result']}</strong></p>
-            <p><strong>Valeur:</strong> {insight['value']}</p>
-            <p><strong>Explication:</strong> {insight['explanation']}</p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    # === EXPORT DONNÉES FRICTION ===
-    
-    st.markdown("### 💾 Export Analyses de Friction")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # Export CSV complet
-        csv_friction_export = friction_comp_df.to_csv(index=False)
-        st.download_button(
-            label="📥 Télécharger données friction (CSV)",
-            data=csv_friction_export,
-            file_name="analyse_friction_complete.csv",
-            mime="text/csv"
-        )
-    
-    with col2:
-        # Export rapport friction
-        friction_report = "# Rapport d'Analyse de Friction Grain-Sphère\n\n"
-        friction_report += f"Date: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-        friction_report += f"## Expériences Analysées\n"
-        friction_report += f"Nombre d'expériences: {len(friction_comp_df)}\n\n"
-        
-        for insight in friction_insights:
-            friction_report += f"## {insight['type']}\n"
-            friction_report += f"**Résultat:** {insight['result']}\n"
-            friction_report += f"**Valeur:** {insight['value']}\n"
-            friction_report += f"**Explication:** {insight['explanation']}\n\n"
-        
-        friction_report += "\n## Données Complètes\n"
-        friction_report += friction_comp_df.to_string(index=False)
-        
-        st.download_button(
-            label="📄 Télécharger rapport friction (TXT)",
-            data=friction_report,
-            file_name="rapport_friction_grain_sphere.txt",
-            mime="text/plain"
-        )
 
 # ==================== FONCTION DE CHARGEMENT ENRICHIE ====================
 
@@ -1678,4 +1158,407 @@ def load_detection_data_enhanced(uploaded_file, experiment_name, water_content, 
                 st.error(f"❌ Le fichier doit contenir les colonnes : {required_columns}")
                 return None
             
-            #
+            # Filtrer les détections valides
+            df_valid = df[(df['X_center'] != 0) & (df['Y_center'] != 0) & (df['Radius'] != 0)]
+            
+            if len(df_valid) < 10:
+                st.warning("⚠️ Pas assez de données valides pour l'analyse")
+                return None
+            
+            # Afficher les informations de base
+            st.info(f"""
+            📊 **Analyse des données** :
+            - Fichier : {uploaded_file.name}
+            - Frames totales : {len(df)}
+            - Détections valides : {len(df_valid)}
+            - Taux de succès : {len(df_valid)/len(df)*100:.1f}%
+            - Rayon moyen détecté : {df_valid['Radius'].mean():.1f} pixels
+            """)
+            
+            # Calculer les métriques enrichies
+            metrics = calculate_friction_metrics_enhanced(df_valid, water_content, angle, sphere_type)
+            
+            if metrics is None:
+                st.error("❌ Impossible de calculer les métriques pour cette expérience")
+                return None
+            
+            # Afficher immédiatement l'analyse de friction avancée
+            st.markdown("---")
+            create_friction_analysis_section(metrics, experiment_name)
+            
+            return {
+                'name': experiment_name,
+                'data': df,
+                'valid_data': df_valid,
+                'water_content': water_content,
+                'angle': angle,
+                'sphere_type': sphere_type,
+                'metrics': metrics,
+                'success_rate': len(df_valid) / len(df) * 100
+            }
+        except Exception as e:
+            st.error(f"❌ Erreur lors du chargement du fichier: {str(e)}")
+            return None
+    return None
+
+# ==================== INTERFACE UTILISATEUR ====================
+
+# Interface de chargement
+st.markdown("## 📂 Chargement des Données Expérimentales")
+
+with st.expander("➕ Ajouter une nouvelle expérience", expanded=True):
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        exp_name = st.text_input("Nom de l'expérience", value=f"Exp_{len(st.session_state.experiments_data)+1}")
+        water_content = st.number_input("Teneur en eau (%)", value=0.0, min_value=0.0, max_value=30.0, step=0.5)
+        angle = st.number_input("Angle de pente (°)", value=15.0, min_value=0.0, max_value=45.0, step=1.0)
+        st.help("💡 Si votre fichier s'appelle '20D_0W_3.csv', utilisez 20° pour l'angle")
+    
+    with col2:
+        sphere_type = st.selectbox("Type de sphère", ["Solide", "Creuse"])
+        
+        with st.expander("⚙️ Paramètres avancés (optionnel)"):
+            manual_radius = st.number_input("Rayon sphère (mm)", value=15.0, min_value=5.0, max_value=50.0)
+            manual_calibration = st.number_input("Calibration (px/mm)", value=5.0, min_value=1.0, max_value=20.0)
+            st.info("Laissez ces valeurs par défaut pour la calibration automatique")
+    
+    uploaded_file = st.file_uploader(
+        "Charger le fichier de données de détection",
+        type=['csv'],
+        help="Fichier CSV avec colonnes: Frame, X_center, Y_center, Radius"
+    )
+    
+    if st.button("📊 Ajouter l'expérience") and uploaded_file is not None:
+        
+        # Détecter l'angle depuis le nom du fichier si possible
+        filename = uploaded_file.name
+        if 'D' in filename:
+            try:
+                angle_from_filename = int(filename.split('D')[0])
+                if 5 <= angle_from_filename <= 45:
+                    angle = angle_from_filename
+                    st.info(f"🎯 Angle détecté automatiquement depuis le nom du fichier: {angle}°")
+            except:
+                pass
+        
+        exp_data = load_detection_data_enhanced(uploaded_file, exp_name, water_content, angle, sphere_type)
+        
+        if exp_data:
+            st.session_state.experiments_data[exp_name] = exp_data
+            st.success(f"✅ Expérience '{exp_name}' ajoutée avec succès!")
+            
+            # Afficher un résumé des résultats
+            metrics = exp_data['metrics']
+            st.markdown(f"""
+            ### 📋 Résumé des Résultats
+            
+            **Coefficient Krr :** {safe_format_value(metrics.get('Krr'))}
+            
+            **Coefficients de Friction :**
+            - μ Cinétique : {safe_format_value(metrics.get('mu_kinetic_avg'), '{:.4f}')}
+            - μ Rolling : {safe_format_value(metrics.get('mu_rolling_avg'), '{:.4f}')}
+            - μ Énergétique : {safe_format_value(metrics.get('mu_energetic'), '{:.4f}')}
+            
+            **Vitesses :**
+            - Initiale : {safe_format_value(metrics.get('v0_mms'), '{:.1f}')} mm/s
+            - Finale : {safe_format_value(metrics.get('vf_mms'), '{:.1f}')} mm/s
+            - Décélération : {safe_format_value(metrics.get('deceleration_percent'), '{:.1f}')}%
+            
+            **Distance parcourue :** {safe_format_value(metrics.get('total_distance_mm'), '{:.1f}')} mm
+            
+            **Calibration utilisée :** {safe_format_value(metrics.get('calibration_px_per_mm'), '{:.2f}')} px/mm
+            """)
+            
+            st.rerun()
+
+# Test rapide
+st.markdown("### 🧪 Test Rapide")
+
+if st.button("🔬 Tester avec données simulées (20°, 0% eau)"):
+    # Créer des données simulées réalistes
+    frames = list(range(1, 108))
+    data = []
+    
+    for frame in frames:
+        if frame < 9:
+            data.append([frame, 0, 0, 0])
+        elif frame in [30, 31]:
+            data.append([frame, 0, 0, 0])
+        else:
+            progress = (frame - 9) / (107 - 9)
+            x = 1240 - progress * 200 - progress**2 * 100
+            y = 680 + progress * 20 + np.random.normal(0, 1)
+            radius = 25 + np.random.normal(0, 2)
+            data.append([frame, max(0, int(x)), max(0, int(y)), max(18, min(35, int(radius)))])
+    
+    df_test = pd.DataFrame(data, columns=['Frame', 'X_center', 'Y_center', 'Radius'])
+    df_valid_test = df_test[(df_test['X_center'] != 0) & (df_test['Y_center'] != 0) & (df_test['Radius'] != 0)]
+    
+    st.info(f"Données simulées créées: {len(df_test)} frames, {len(df_valid_test)} détections valides")
+    
+    # Test du calcul
+    metrics_test = calculate_friction_metrics_enhanced(df_valid_test, 0.0, 20.0, "Solide")
+    
+    if metrics_test:
+        st.success("✅ Test réussi ! Le calcul de friction fonctionne.")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Krr", safe_format_value(metrics_test.get('Krr')))
+        with col2:
+            st.metric("μ Cinétique", safe_format_value(metrics_test.get('mu_kinetic_avg'), '{:.4f}'))
+        with col3:
+            st.metric("μ Rolling", safe_format_value(metrics_test.get('mu_rolling_avg'), '{:.4f}'))
+        with col4:
+            st.metric("μ Énergétique", safe_format_value(metrics_test.get('mu_energetic'), '{:.4f}'))
+
+# Affichage des expériences
+if st.session_state.experiments_data:
+    st.markdown("### 📋 Expériences Chargées")
+    
+    exp_summary = []
+    for name, data in st.session_state.experiments_data.items():
+        exp_summary.append({
+            'Expérience': name,
+            'Teneur en eau (%)': data['water_content'],
+            'Angle (°)': data['angle'],
+            'Type de sphère': data['sphere_type'],
+            'Krr': safe_format_value(data['metrics'].get('Krr')),
+            'μ Cinétique': safe_format_value(data['metrics'].get('mu_kinetic_avg'), '{:.4f}'),
+            'μ Rolling': safe_format_value(data['metrics'].get('mu_rolling_avg'), '{:.4f}'),
+            'Taux de succès (%)': safe_format_value(data.get('success_rate'), '{:.1f}')
+        })
+    
+    st.dataframe(pd.DataFrame(exp_summary), use_container_width=True)
+    
+    # Sélection pour comparaison
+    st.markdown("### 🔍 Sélection pour Comparaison")
+    selected_experiments = st.multiselect(
+        "Choisir les expériences à comparer :",
+        options=list(st.session_state.experiments_data.keys()),
+        default=list(st.session_state.experiments_data.keys())
+    )
+    
+    if len(selected_experiments) >= 2:
+        st.markdown("---")
+        st.markdown("## 📊 Analyse Comparative Standard")
+        
+        # Préparer les données pour la comparaison standard
+        comparison_data = []
+        for exp_name in selected_experiments:
+            exp = st.session_state.experiments_data[exp_name]
+            metrics = exp['metrics']
+            
+            comparison_data.append({
+                'Expérience': exp_name,
+                'Teneur_eau': exp['water_content'],
+                'Angle': exp['angle'],
+                'Type_sphère': exp['sphere_type'],
+                'Krr': metrics.get('Krr'),
+                'v0_mms': metrics.get('v0_mms'),
+                'vf_mms': metrics.get('vf_mms'),
+                'total_distance_mm': metrics.get('total_distance_mm'),
+                'deceleration_percent': metrics.get('deceleration_percent'),
+                'success_rate': exp.get('success_rate')
+            })
+        
+        comp_df = pd.DataFrame(comparison_data)
+        
+        # Graphiques de comparaison standard
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Krr vs Teneur en eau
+            valid_krr = comp_df.dropna(subset=['Krr'])
+            if len(valid_krr) > 0:
+                try:
+                    fig_krr = px.scatter(
+                        valid_krr, 
+                        x='Teneur_eau', 
+                        y='Krr',
+                        color='Angle',
+                        hover_data=['Expérience'],
+                        title="🔍 Coefficient Krr vs Teneur en Eau"
+                    )
+                    fig_krr.update_layout(height=400)
+                    st.plotly_chart(fig_krr, use_container_width=True)
+                except Exception as e:
+                    st.error(f"Erreur création graphique Krr: {str(e)}")
+        
+        with col2:
+            # Vitesses vs Angle
+            valid_velocities = comp_df.dropna(subset=['v0_mms', 'vf_mms'])
+            if len(valid_velocities) > 0:
+                try:
+                    fig_vel = go.Figure()
+                    fig_vel.add_trace(go.Scatter(
+                        x=valid_velocities['Angle'], 
+                        y=valid_velocities['v0_mms'],
+                        mode='markers+lines', 
+                        name='V₀ (initiale)',
+                        marker=dict(color='blue', size=10)
+                    ))
+                    fig_vel.add_trace(go.Scatter(
+                        x=valid_velocities['Angle'], 
+                        y=valid_velocities['vf_mms'],
+                        mode='markers+lines', 
+                        name='Vf (finale)',
+                        marker=dict(color='red', size=10)
+                    ))
+                    fig_vel.update_layout(
+                        title="🏃 Vitesses vs Angle",
+                        xaxis_title="Angle (°)",
+                        yaxis_title="Vitesse (mm/s)",
+                        height=400
+                    )
+                    st.plotly_chart(fig_vel, use_container_width=True)
+                except Exception as e:
+                    st.error(f"Erreur création graphique vitesses: {str(e)}")
+        
+        # NOUVELLE SECTION: Comparaison avancée des frictions
+        st.markdown("---")
+        create_friction_comparison_section(selected_experiments)
+    
+    elif len(selected_experiments) == 1:
+        st.info("📊 Sélectionnez au moins 2 expériences pour effectuer une comparaison")
+
+# Sidebar avec aide
+st.sidebar.markdown("### 🔧 Aide au Dépannage")
+
+with st.sidebar.expander("❌ Problèmes Fréquents"):
+    st.markdown("""
+    **Krr = N/A ou erreur :**
+    - Vérifiez l'angle (20° pour `20D_0W_3.csv`)
+    - Assurez-vous d'avoir >10 détections valides
+    - Vérifiez que la sphère décélère
+    
+    **Vitesse finale > initiale :**
+    - Mauvaise calibration
+    - Angle incorrect
+    - Données corrompues
+    
+    **Coefficients de friction étranges :**
+    - Vérifiez les paramètres physiques
+    - Contrôlez la calibration automatique
+    """)
+
+with st.sidebar.expander("🎯 Valeurs Attendues"):
+    st.markdown("""
+    **Krr typiques :**
+    - Sols secs : 0.03-0.07
+    - Sols humides : 0.05-0.12
+    
+    **μ Cinétique typiques :**
+    - Sable sec : 0.2-0.4
+    - Sable humide : 0.3-0.6
+    
+    **μ Rolling typiques :**
+    - Généralement < μ Cinétique
+    - Peut être négatif (effet lubrifiant)
+    """)
+
+# Gestion des expériences existantes
+if st.session_state.experiments_data:
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### 📊 Expériences Chargées")
+    
+    for name, data in st.session_state.experiments_data.items():
+        with st.sidebar.expander(f"📋 {name}"):
+            st.write(f"**Eau :** {data['water_content']}%")
+            st.write(f"**Angle :** {data['angle']}°")
+            st.write(f"**Type :** {data['sphere_type']}")
+            
+            krr_val = data['metrics'].get('Krr')
+            if krr_val is not None and not pd.isna(krr_val):
+                st.write(f"**Krr :** {krr_val:.6f}")
+                if 0.03 <= krr_val <= 0.15:
+                    st.success("✅ Krr OK")
+                else:
+                    st.warning("⚠️ Krr inhabituel")
+            else:
+                st.error("❌ Krr non calculé")
+            
+            # Afficher coefficients de friction
+            mu_kinetic = data['metrics'].get('mu_kinetic_avg')
+            if mu_kinetic is not None:
+                st.write(f"**μ Cinétique :** {mu_kinetic:.4f}")
+    
+    # Boutons de gestion
+    st.sidebar.markdown("---")
+    exp_to_remove = st.sidebar.selectbox(
+        "Supprimer une expérience :",
+        options=["Aucune"] + list(st.session_state.experiments_data.keys())
+    )
+    
+    if exp_to_remove != "Aucune" and st.sidebar.button("🗑️ Supprimer"):
+        del st.session_state.experiments_data[exp_to_remove]
+        st.success(f"Expérience '{exp_to_remove}' supprimée!")
+        st.rerun()
+    
+    if st.sidebar.button("🧹 Effacer Tout"):
+        st.session_state.experiments_data = {}
+        st.success("Toutes les expériences supprimées!")
+        st.rerun()
+
+# Instructions d'utilisation si pas d'expériences
+else:
+    st.markdown("""
+    ## 🚀 Instructions d'Utilisation - Analyseur de Friction Complet
+    
+    ### 🔥 **Nouvelles Fonctionnalités de Friction :**
+    
+    #### **4 Coefficients de Friction Calculés :**
+    1. **🔥 μ Cinétique** : Friction directe grain-sphère (`F_résistance / F_normale`)
+    2. **🎯 μ Rolling** : Résistance pure au roulement (`μ_cinétique - tan(angle)`)
+    3. **⚡ μ Énergétique** : Basé sur dissipation d'énergie (`E_dissipée / (F_normale × distance)`)
+    4. **📊 Krr Référence** : Coefficient traditionnel de résistance au roulement
+    
+    #### **Graphiques Automatiques :**
+    - **📈 Coefficients vs Temps** : Évolution temporelle de tous les coefficients
+    - **⚖️ Analyse des Forces** : Forces, puissance et énergie dissipée vs temps
+    - **📊 Histogrammes** : Distribution statistique des coefficients
+    - **🔗 Corrélations** : Relations vitesse-friction et entre coefficients
+    
+    #### **Analyses Avancées Multi-Expériences :**
+    - **💧 Effet Humidité** : Impact de la teneur en eau sur chaque coefficient
+    - **📐 Effet Angle** : Influence de l'inclinaison sur la friction
+    - **📊 Variabilité** : Stabilité temporelle et écarts-types
+    - **🎯 Insights Automatiques** : Détection des tendances et corrélations
+    
+    ### 📋 **Pour Commencer :**
+    
+    1. **📂 Chargez votre fichier CSV** (Frame, X_center, Y_center, Radius)
+    2. **📊 L'analyse de friction apparaît automatiquement** après le diagnostic Krr
+    3. **🔍 Comparez plusieurs expériences** pour voir les effets humidité/angle
+    4. **💾 Exportez les résultats** : CSV détaillé + rapport complet
+    
+    ### 💡 **Pour votre fichier `20D_0W_3.csv` :**
+    
+    - **Angle :** 20° (détection automatique depuis le nom)
+    - **Humidité :** 0% (sols secs)
+    - **Coefficients attendus :** μ cinétique ~0.2-0.4, μ rolling variable, Krr ~0.04-0.08
+    
+    ### 🎯 **Résultats Attendus :**
+    
+    Vous obtiendrez automatiquement :
+    - ✅ **4 cartes résumé** style dashboard avec tous les coefficients
+    - ✅ **Graphique coefficients vs temps** (votre demande principale)
+    - ✅ **Analyse forces et énergies** 
+    - ✅ **Distributions statistiques**
+    - ✅ **Export complet** pour analyse externe
+    
+    Ce système offre l'analyse de friction grain-sphère **la plus complète** disponible !
+    """)
+
+# Footer
+st.markdown("---")
+st.markdown("""
+<div style="text-align: center; color: #666; padding: 1rem;">
+    🎓 <strong>Analyseur Avancé de Friction Grain-Sphère</strong><br>
+    <em>🔥 Analyse complète des coefficients de friction temporels - Université d'Osaka</em><br>
+    📧 Département des Sciences de la Terre Cosmique<br>
+    🔬 <strong>Fonctionnalités :</strong> 4 coefficients de friction, graphiques temporels, analyses multi-expériences, export complet
+</div>
+""", unsafe_allow_html=True)
