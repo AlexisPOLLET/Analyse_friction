@@ -330,15 +330,19 @@ def create_krr_plots(experiments_data):
             labels={'Teneur_eau': 'Teneur en eau (%)', 'Krr': 'Coefficient Krr'}
         )
         
-        # Ligne de tendance si assez de points
-        if len(df_plot) >= 2:
-            z = np.polyfit(df_plot['Teneur_eau'], df_plot['Krr'], 1)
-            p = np.poly1d(z)
-            x_line = np.linspace(df_plot['Teneur_eau'].min(), df_plot['Teneur_eau'].max(), 100)
-            fig_krr_eau.add_trace(go.Scatter(
-                x=x_line, y=p(x_line), mode='lines', name='Tendance',
-                line=dict(dash='dash', color='red', width=2)
-            ))
+        # Ligne de tendance si assez de points (avec gestion d'erreur)
+        if len(df_plot) >= 3:  # Au moins 3 points pour éviter les erreurs
+            try:
+                z = np.polyfit(df_plot['Teneur_eau'], df_plot['Krr'], 1)
+                p = np.poly1d(z)
+                x_line = np.linspace(df_plot['Teneur_eau'].min(), df_plot['Teneur_eau'].max(), 100)
+                fig_krr_eau.add_trace(go.Scatter(
+                    x=x_line, y=p(x_line), mode='lines', name='Tendance',
+                    line=dict(dash='dash', color='red', width=2)
+                ))
+            except (np.linalg.LinAlgError, np.RankWarning):
+                # Si erreur de calcul, pas de ligne de tendance
+                pass
         
         st.plotly_chart(fig_krr_eau, use_container_width=True)
     
@@ -355,15 +359,19 @@ def create_krr_plots(experiments_data):
             labels={'Angle': 'Angle (°)', 'Krr': 'Coefficient Krr'}
         )
         
-        # Ligne de tendance
-        if len(df_plot) >= 2:
-            z = np.polyfit(df_plot['Angle'], df_plot['Krr'], 1)
-            p = np.poly1d(z)
-            x_line = np.linspace(df_plot['Angle'].min(), df_plot['Angle'].max(), 100)
-            fig_krr_angle.add_trace(go.Scatter(
-                x=x_line, y=p(x_line), mode='lines', name='Tendance',
-                line=dict(dash='dash', color='red', width=2)
-            ))
+        # Ligne de tendance (avec gestion d'erreur)
+        if len(df_plot) >= 3:
+            try:
+                z = np.polyfit(df_plot['Angle'], df_plot['Krr'], 1)
+                p = np.poly1d(z)
+                x_line = np.linspace(df_plot['Angle'].min(), df_plot['Angle'].max(), 100)
+                fig_krr_angle.add_trace(go.Scatter(
+                    x=x_line, y=p(x_line), mode='lines', name='Tendance',
+                    line=dict(dash='dash', color='red', width=2)
+                ))
+            except (np.linalg.LinAlgError, np.RankWarning):
+                # Si erreur de calcul, pas de ligne de tendance
+                pass
         
         st.plotly_chart(fig_krr_angle, use_container_width=True)
 
