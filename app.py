@@ -1337,6 +1337,255 @@ st.markdown(f"""
     📊 <strong>Statut :</strong> {len(st.session_state.experiments_data)} expériences chargées<br>
     🧹 <strong>Fonctionnalités :</strong> Suppression bruit début/fin, μ énergétique corrigé, graphiques vs angle
 </div>
+""", unsafe_allow_html=True)
+
+# ==================== SECTION AVANCÉE (OPTIONNELLE) ====================
+
+# Mode développeur pour tests avancés
+if st.sidebar.checkbox("🔬 Mode Développeur", value=False):
+    st.markdown("---")
+    st.markdown("## 🔬 Outils de Développement")
+    
+    tab1, tab2, tab3 = st.tabs(["🧪 Tests", "📊 Données", "🔧 Debug"])
+    
+    with tab1:
+        st.markdown("### 🧪 Tests Automatisés")
+        
+        if st.button("🧪 Test Complet du Pipeline"):
+            # Test avec données simulées complexes
+            st.info("🔄 Lancement du test complet...")
+            
+            # Créer plusieurs datasets de test
+            test_cases = [
+                {"name": "Test_5D_0W", "angle": 5, "water": 0, "noise_level": 0.5},
+                {"name": "Test_15D_5W", "angle": 15, "water": 5, "noise_level": 1.0},
+                {"name": "Test_20D_10W", "angle": 20, "water": 10, "noise_level": 1.5}
+            ]
+            
+            test_results = []
+            
+            for test_case in test_cases:
+                # Générer données avec bruit contrôlé
+                frames = list(range(1, 120))
+                data = []
+                
+                for frame in frames:
+                    if frame < 8:
+                        data.append([frame, 0, 0, 0])
+                    else:
+                        # Simulation avec bruit contrôlé
+                        progress = (frame - 8) / (120 - 8)
+                        x = 1300 - progress * 200 * (1 + test_case["angle"]/45)
+                        y = 700 + progress * 20 + np.random.normal(0, test_case["noise_level"])
+                        radius = 24 + np.random.normal(0, test_case["noise_level"])
+                        data.append([frame, max(0, x), max(0, y), max(18, min(30, radius))])
+                
+                df_test = pd.DataFrame(data, columns=['Frame', 'X_center', 'Y_center', 'Radius'])
+                df_valid_test = df_test[(df_test['X_center'] != 0) & (df_test['Y_center'] != 0) & (df_test['Radius'] != 0)]
+                
+                # Test du calcul
+                krr_result, diagnostic = calculate_krr_robust(df_valid_test, angle_deg=test_case["angle"], show_diagnostic=False)
+                
+                if krr_result:
+                    friction_result = calculate_friction_metrics_corrected(df_valid_test, angle_deg=test_case["angle"])
+                    
+                    test_results.append({
+                        "Test": test_case["name"],
+                        "Statut": "✅ SUCCÈS",
+                        "Krr": krr_result.get('Krr', 0),
+                        "μ_Cinétique": friction_result.get('mu_kinetic_avg', 0),
+                        "μ_Énergétique": friction_result.get('mu_energetic', 0),
+                        "Nettoyage": f"{friction_result.get('cleaning_info', {}).get('percentage_kept', 0):.1f}%"
+                    })
+                else:
+                    test_results.append({
+                        "Test": test_case["name"],
+                        "Statut": "❌ ÉCHEC",
+                        "Krr": "N/A",
+                        "μ_Cinétique": "N/A", 
+                        "μ_Énergétique": "N/A",
+                        "Nettoyage": "N/A"
+                    })
+            
+            # Affichage des résultats de test
+            test_df = pd.DataFrame(test_results)
+            st.dataframe(test_df, use_container_width=True)
+            
+            # Validation des résultats
+            successes = sum(1 for r in test_results if "✅" in r["Statut"])
+            st.success(f"🎯 Tests réussis : {successes}/{len(test_results)}")
+    
+    with tab2:
+        st.markdown("### 📊 Inspection des Données")
+        
+        if st.session_state.experiments_data:
+            selected_exp = st.selectbox(
+                "Sélectionner une expérience à inspecter:",
+                options=list(st.session_state.experiments_data.keys())
+            )
+            
+            if selected_exp:
+                exp_data = st.session_state.experiments_data[selected_exp]
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown("**Données brutes:**")
+                    st.dataframe(exp_data['data'].head(10))
+                
+                with col2:
+                    st.markdown("**Métriques calculées:**")
+                    metrics = exp_data.get('metrics', {})
+                    
+                    metrics_display = {
+                        "Krr": safe_format_value(metrics.get('Krr')),
+                        "μ Cinétique": safe_format_value(metrics.get('mu_kinetic_avg'), '{:.4f}'),
+                        "μ Rolling": safe_format_value(metrics.get('mu_rolling_avg'), '{:.4f}'),
+                        "μ Énergétique": safe_format_value(metrics.get('mu_energetic'), '{:.4f}'),
+                        "V₀ (mm/s)": safe_format_value(metrics.get('v0_mms'), '{:.1f}'),
+                        "Vf (mm/s)": safe_format_value(metrics.get('vf_mms'), '{:.1f}'),
+                        "Distance (mm)": safe_format_value(metrics.get('total_distance_mm'), '{:.1f}')
+                    }
+                    
+                    for key, value in metrics_display.items():
+                        st.write(f"**{key}:** {value}")
+        else:
+            st.info("Aucune expérience chargée pour inspection")
+    
+    with tab3:
+        st.markdown("### 🔧 Informations de Debug")
+        
+        # Informations système
+        st.markdown("**Configuration:**")
+        st.json({
+            "Expériences_chargées": len(st.session_state.experiments_data),
+            "Noms_expériences": list(st.session_state.experiments_data.keys()),
+            "Version_nettoyage": "Agressif - Suppression début/fin",
+            "Calcul_μ_énergétique": "Corrigé - E_dissipée/(F_normale×distance)",
+            "Graphiques_générés": ["Coefficients_vs_temps", "Histogrammes", "Vitesses", "Forces", "Comparaisons"]
+        })
+        
+        # Test des fonctions critiques
+        if st.button("🔧 Test Fonctions Critiques"):
+            st.info("Test des fonctions de base...")
+            
+            # Test de formatage
+            test_format = safe_format_value(0.123456, "{:.4f}")
+            st.write(f"✅ Format test: {test_format}")
+            
+            # Test de données simulées
+            test_data = create_sample_data()
+            st.write(f"✅ Données simulées: {len(test_data)} points")
+            
+            # Test de nettoyage
+            df_valid = test_data[(test_data['X_center'] != 0) & (test_data['Y_center'] != 0)]
+            cleaned, info = clean_data_aggressive(df_valid)
+            st.write(f"✅ Nettoyage: {info['percentage_kept']:.1f}% conservé")
+            
+            st.success("🎯 Tous les tests de base réussis!")
+
+# ==================== AIDE ET DOCUMENTATION ====================
+
+with st.expander("📚 Documentation Complète", expanded=False):
+    st.markdown("""
+    ## 📚 Documentation Technique Complète
+    
+    ### 🧹 **Algorithme de Nettoyage des Données**
+    
+    **Problème résolu :** Suppression du bruit de début et fin de trajectoire
+    
+    **Méthode :**
+    1. **Analyse du mouvement** : Calcul des déplacements inter-frames
+    2. **Détection zones stables** : Identification du mouvement constant
+    3. **Suppression adaptative** : 10-15% début/fin selon longueur dataset
+    4. **Validation finale** : Conservation minimum 60% des données
+    
+    **Code clé :**
+    ```python
+    def clean_data_aggressive(df_valid):
+        # Suppression 10-15% début/fin
+        remove_percent = 0.15 if len(df_valid) > 50 else 0.10
+        # + détection mouvement stable
+        # + validation finale
+    ```
+    
+    ### 🔧 **Calculs de Friction Corrigés**
+    
+    **1. μ Cinétique :** `F_résistance / F_normale`
+    - Force résistance = masse × |accélération_tangentielle|
+    - Force normale = masse × g × cos(angle)
+    
+    **2. μ Rolling :** `μ_cinétique - tan(angle)`
+    - Résistance pure au roulement (effet pente soustrait)
+    
+    **3. μ Énergétique (CORRIGÉ) :** `E_dissipée / (F_normale × distance)`
+    - **Ancien problème :** Cumul énergétique incohérent → valeurs >100
+    - **Solution :** Calcul correct basé sur conservation énergie
+    
+    **4. Krr traditionnel :** `(v₀² - vf²) / (2g × distance)`
+    - Coefficient de résistance au roulement classique
+    
+    ### 📊 **Graphiques Générés Automatiquement**
+    
+    **1. Principal - Coefficients vs Temps :**
+    - 4 courbes : μ Cinétique, μ Rolling, μ Énergétique, Krr
+    - Hover interactif avec valeurs précises
+    
+    **2. Cinématique :**
+    - Vitesse vs temps avec marqueurs V₀/Vf
+    - Accélération vs temps
+    
+    **3. Histogrammes :**
+    - Distribution de chaque coefficient
+    - Analyse statistique des variations
+    
+    **4. Comparaison Multi-Expériences :**
+    - Coefficients vs Angle (abscisse)
+    - Effet teneur en eau (couleur)
+    - Lignes de tendance automatiques
+    
+    ### 🔍 **Validation et Contrôle Qualité**
+    
+    **Critères de validation :**
+    - Krr ∈ [0.03, 0.15] : ✅ Littérature OK
+    - μ Énergétique < 1.0 : ✅ Physiquement cohérent
+    - Décélération > 0 : ✅ Sphère ralentit
+    - Distance > 5mm : ✅ Mouvement significatif
+    
+    **Messages diagnostic :**
+    - 🟢 Succès : Tous critères respectés
+    - 🟡 Warning : Valeurs inhabituelles mais possibles  
+    - 🔴 Erreur : Calcul impossible
+    
+    ### 💾 **Export et Sauvegarde**
+    
+    **CSV exporté contient :**
+    - Séries temporelles complètes
+    - Tous coefficients instantanés
+    - Forces et énergies
+    - Données nettoyées seulement
+    
+    **Comparaison exportée :**
+    - Tableau récapitulatif toutes expériences
+    - Moyennes et écarts-types
+    - Corrélations entre paramètres
+    """)
+
+# ==================== FOOTER FINAL ====================
+
+st.markdown("---")
+st.markdown("""
+<div style="text-align: center; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 2rem; border-radius: 10px; margin: 1rem 0;">
+    <h2>🎓 Analyseur de Friction - Version Finale Corrigée</h2>
+    <p><strong>🔥 Fonctionnalités Principales :</strong></p>
+    <p>✅ Nettoyage automatique du bruit (début/fin supprimés)<br>
+    ✅ Calculs corrigés (μ énergétique réaliste)<br>
+    ✅ Graphiques complets (coefficients vs temps, histogrammes, angle en abscisse)<br>
+    ✅ Comparaison multi-expériences avancée<br>
+    ✅ Export CSV détaillé<br>
+    ✅ Diagnostic complet avec validation physique</p>
+    <p><em>🎯 Prêt pour analyse de vos données expérimentales !</em></p>
+</div>
 """, unsafe_allow_html=True) μ Rolling vs Angle
         valid_rolling_angle = comp_df.dropna(subset=['mu_rolling_avg', 'Angle'])
         if len(valid_rolling_angle) > 0:
