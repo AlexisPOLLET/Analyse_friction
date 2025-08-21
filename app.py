@@ -109,11 +109,23 @@ def calculate_complete_metrics(df_valid, water_content, angle, sphere_type,
     avg_radius_px = df_valid['Radius'].mean()
     pixels_per_mm = avg_radius_px / sphere_radius_mm
     
-    # Nettoyage conservateur (garder 70% des données au centre)
+    # Nettoyage ULTRA-AGRESSIF pour éliminer les pics
     total_points = len(df_valid)
-    start_idx = max(5, int(total_points * 0.15))
-    end_idx = min(total_points - 5, int(total_points * 0.85))
+    
+    # Supprimer 25% au début et 25% à la fin (zones instables)
+    start_idx = max(8, int(total_points * 0.25))
+    end_idx = min(total_points - 8, int(total_points * 0.75))
+    
+    # Garder seulement le coeur stable (50% central)
     df_clean = df_valid.iloc[start_idx:end_idx].reset_index(drop=True)
+    
+    if len(df_clean) < 10:
+        # Si trop agressif, garder au moins 30% central
+        middle = total_points // 2
+        half_keep = max(10, int(total_points * 0.15))
+        start_idx = max(0, middle - half_keep)
+        end_idx = min(total_points, middle + half_keep)
+        df_clean = df_valid.iloc[start_idx:end_idx].reset_index(drop=True)
     
     # Conversion unités physiques
     x_m = df_clean['X_center'].values / pixels_per_mm / 1000
@@ -178,9 +190,14 @@ def calculate_complete_metrics(df_valid, water_content, angle, sphere_type,
     krr_instantaneous = np.abs(a_tangential) / g
     krr_instantaneous = np.clip(krr_instantaneous, 0, 1.0)
     
-    # Moyennes
-    mu_kinetic_avg = np.mean(mu_kinetic)
-    mu_rolling_avg = np.mean(mu_rolling)
+    # === COEFFICIENTS DE FRICTION AVEC SUPPRESSION PICS ===
+    # Éliminer les valeurs aberrantes avant calcul des moyennes
+    mu_kinetic_clean = mu_kinetic[(mu_kinetic > 0) & (mu_kinetic < 1.0)]  # Plafonnement physique
+    mu_rolling_clean = mu_rolling[np.abs(mu_rolling) < 1.0]  # Éliminer valeurs extrêmes
+    
+    # Moyennes sur données nettoyées
+    mu_kinetic_avg = np.mean(mu_kinetic_clean) if len(mu_kinetic_clean) > 0 else np.mean(mu_kinetic)
+    mu_rolling_avg = np.mean(mu_rolling_clean) if len(mu_rolling_clean) > 0 else np.mean(mu_rolling)
     
     # Temps
     time_array = np.arange(len(df_clean)) * dt
@@ -224,13 +241,13 @@ def calculate_complete_metrics(df_valid, water_content, angle, sphere_type,
         'friction_coefficient_eff': krr_global + np.tan(angle_rad) if krr_global else None,
         'calibration_px_per_mm': pixels_per_mm,
         
-        # === SÉRIES TEMPORELLES ===
+        # === SÉRIES TEMPORELLES NETTOYÉES ===
         'time_series': {
             'time': time_array,
             'velocity_mms': v_magnitude * 1000,
             'acceleration_mms2': a_tangential * 1000,
-            'mu_kinetic': mu_kinetic,
-            'mu_rolling': mu_rolling,
+            'mu_kinetic': np.clip(mu_kinetic, 0, 1.0),  # Plafonnement des coefficients
+            'mu_rolling': np.clip(mu_rolling, -1.0, 1.0),  # Plafonnement symétrique
             'krr_instantaneous': krr_instantaneous,
             'resistance_force_mN': F_resistance * 1000,
             'energy_kinetic_mJ': E_kinetic * 1000
@@ -975,27 +992,53 @@ if st.session_state.experiments_data:
                     col1, col2 = st.columns(2)
                     
                     with col1:
-                        # Krr vs Humidité avec tendance
+                        # Krr vs Humidité avec tendance manuelle
                         fig_humid_krr = px.scatter(
                             humidity_df,
                             x='Humidité',
                             y='Krr',
-                            trendline="ols",
                             title="💧 Krr vs Humidité",
                             labels={'Humidité': 'Teneur en eau (%)', 'Krr': 'Coefficient Krr'}
                         )
+                        
+                        # Ajouter ligne de tendance manuelle
+                        if len(humidity_df) >= 3:
+                            try:
+                                z = np.polyfit(humidity_df['Humidité'], humidity_df['Krr'], 1)
+                                p = np.poly1d(z)
+                                x_line = np.linspace(humidity_df['Humidité'].min(), humidity_df['Humidité'].max(), 100)
+                                fig_humid_krr.add_trace(go.Scatter(
+                                    x=x_line, y=p(x_line), mode='lines', name='Tendance',
+                                    line=dict(dash='dash', color='red', width=2)
+                                ))
+                            except:
+                                pass
+                        
                         st.plotly_chart(fig_humid_krr, use_container_width=True)
                     
                     with col2:
-                        # μ Cinétique vs Humidité
+                        # μ Cinétique vs Humidité avec tendance manuelle
                         fig_humid_mu = px.scatter(
                             humidity_df,
                             x='Humidité',
                             y='μ_Cinétique',
-                            trendline="ols",
                             title="🔥 μ Cinétique vs Humidité",
                             labels={'Humidité': 'Teneur en eau (%)', 'μ_Cinétique': 'μ Cinétique'}
                         )
+                        
+                        # Ajouter ligne de tendance manuelle
+                        if len(humidity_df) >= 3:
+                            try:
+                                z = np.polyfit(humidity_df['Humidité'], humidity_df['μ_Cinétique'], 1)
+                                p = np.poly1d(z)
+                                x_line = np.linspace(humidity_df['Humidité'].min(), humidity_df['Humidité'].max(), 100)
+                                fig_humid_mu.add_trace(go.Scatter(
+                                    x=x_line, y=p(x_line), mode='lines', name='Tendance',
+                                    line=dict(dash='dash', color='red', width=2)
+                                ))
+                            except:
+                                pass
+                        
                         st.plotly_chart(fig_humid_mu, use_container_width=True)
                     
                     # Corrélation humidité
@@ -1031,27 +1074,53 @@ if st.session_state.experiments_data:
                     col1, col2 = st.columns(2)
                     
                     with col1:
-                        # Vitesse vs Angle
+                        # Vitesse vs Angle avec tendance manuelle
                         fig_angle_vel = px.scatter(
                             angle_df,
                             x='Angle',
                             y='V0',
-                            trendline="ols",
                             title="🏃 Vitesse Initiale vs Angle",
                             labels={'Angle': 'Angle (°)', 'V0': 'Vitesse initiale (mm/s)'}
                         )
+                        
+                        # Ajouter ligne de tendance manuelle
+                        if len(angle_df) >= 3:
+                            try:
+                                z = np.polyfit(angle_df['Angle'], angle_df['V0'], 1)
+                                p = np.poly1d(z)
+                                x_line = np.linspace(angle_df['Angle'].min(), angle_df['Angle'].max(), 100)
+                                fig_angle_vel.add_trace(go.Scatter(
+                                    x=x_line, y=p(x_line), mode='lines', name='Tendance',
+                                    line=dict(dash='dash', color='red', width=2)
+                                ))
+                            except:
+                                pass
+                        
                         st.plotly_chart(fig_angle_vel, use_container_width=True)
                     
                     with col2:
-                        # Accélération vs Angle
+                        # Accélération vs Angle avec tendance manuelle
                         fig_angle_accel = px.scatter(
                             angle_df,
                             x='Angle',
                             y='Accélération_Max',
-                            trendline="ols",
                             title="🚀 Accélération vs Angle",
                             labels={'Angle': 'Angle (°)', 'Accélération_Max': 'Accélération (mm/s²)'}
                         )
+                        
+                        # Ajouter ligne de tendance manuelle
+                        if len(angle_df) >= 3:
+                            try:
+                                z = np.polyfit(angle_df['Angle'], angle_df['Accélération_Max'], 1)
+                                p = np.poly1d(z)
+                                x_line = np.linspace(angle_df['Angle'].min(), angle_df['Angle'].max(), 100)
+                                fig_angle_accel.add_trace(go.Scatter(
+                                    x=x_line, y=p(x_line), mode='lines', name='Tendance',
+                                    line=dict(dash='dash', color='red', width=2)
+                                ))
+                            except:
+                                pass
+                        
                         st.plotly_chart(fig_angle_accel, use_container_width=True)
             
             with tab3:
