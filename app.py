@@ -1246,6 +1246,290 @@ else:
 
 # === FOOTER ===
 st.markdown("---")
+# === SECTION BONUS: STATISTIQUES DÉTAILLÉES ===
+if st.session_state.experiments_data:
+    st.markdown("---")
+    st.markdown("## 📈 Statistiques Détaillées")
+    
+    # Calculs statistiques avancés
+    all_data = []
+    for exp_name, exp_data in st.session_state.experiments_data.items():
+        metrics = exp_data.get('metrics', {})
+        all_data.append({
+            'exp_name': exp_name,
+            'water_content': exp_data.get('water_content', 0),
+            'angle': exp_data.get('angle', 15),
+            'krr': metrics.get('Krr', 0),
+            'mu_kinetic': metrics.get('mu_kinetic_avg', 0),
+            'velocity': metrics.get('v0_mms', 0),
+            'acceleration': metrics.get('max_acceleration_mms2', 0),
+            'success_rate': exp_data.get('success_rate', 0)
+        })
+    
+    if len(all_data) >= 2:
+        stats_df = pd.DataFrame(all_data)
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("#### 📊 Statistiques Krr")
+            if stats_df['krr'].notna().any():
+                krr_mean = stats_df['krr'].mean()
+                krr_std = stats_df['krr'].std()
+                krr_min = stats_df['krr'].min()
+                krr_max = stats_df['krr'].max()
+                
+                st.markdown(f"""
+                - **Moyenne :** {krr_mean:.6f}
+                - **Écart-type :** {krr_std:.6f}
+                - **Min :** {krr_min:.6f}
+                - **Max :** {krr_max:.6f}
+                - **Coefficient de variation :** {(krr_std/krr_mean*100):.1f}%
+                """)
+        
+        with col2:
+            st.markdown("#### 🔥 Statistiques μ Cinétique")
+            if stats_df['mu_kinetic'].notna().any():
+                mu_mean = stats_df['mu_kinetic'].mean()
+                mu_std = stats_df['mu_kinetic'].std()
+                mu_min = stats_df['mu_kinetic'].min()
+                mu_max = stats_df['mu_kinetic'].max()
+                
+                st.markdown(f"""
+                - **Moyenne :** {mu_mean:.4f}
+                - **Écart-type :** {mu_std:.4f}
+                - **Min :** {mu_min:.4f}
+                - **Max :** {mu_max:.4f}
+                - **Coefficient de variation :** {(mu_std/mu_mean*100):.1f}%
+                """)
+        
+        # Histogrammes de distribution
+        st.markdown("#### 📊 Distributions")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if stats_df['krr'].notna().any():
+                fig_hist_krr = px.histogram(
+                    stats_df, 
+                    x='krr', 
+                    nbins=min(10, len(stats_df)),
+                    title="Distribution des Valeurs Krr"
+                )
+                st.plotly_chart(fig_hist_krr, use_container_width=True)
+        
+        with col2:
+            if stats_df['mu_kinetic'].notna().any():
+                fig_hist_mu = px.histogram(
+                    stats_df, 
+                    x='mu_kinetic', 
+                    nbins=min(10, len(stats_df)),
+                    title="Distribution μ Cinétique"
+                )
+                st.plotly_chart(fig_hist_mu, use_container_width=True)
+
+# === SECTION BONUS: ANALYSE INSIGHTS AUTOMATIQUES ===
+if len(st.session_state.experiments_data) >= 3:
+    st.markdown("---")
+    st.markdown("## 🧠 Insights Automatiques")
+    
+    insights = []
+    
+    # Analyse tendances
+    stats_df = pd.DataFrame(all_data)
+    
+    # Insight 1: Effet humidité
+    if stats_df['water_content'].nunique() >= 2 and stats_df['krr'].notna().sum() >= 2:
+        water_krr_corr = stats_df[['water_content', 'krr']].corr().iloc[0, 1]
+        if abs(water_krr_corr) > 0.5:
+            direction = "augmente" if water_krr_corr > 0 else "diminue"
+            strength = "fortement" if abs(water_krr_corr) > 0.7 else "modérément"
+            insights.append(f"💧 **Effet Humidité :** Krr {direction} {strength} avec l'humidité (r={water_krr_corr:.3f})")
+    
+    # Insight 2: Effet angle
+    if stats_df['angle'].nunique() >= 2 and stats_df['velocity'].notna().sum() >= 2:
+        angle_vel_corr = stats_df[['angle', 'velocity']].corr().iloc[0, 1]
+        if abs(angle_vel_corr) > 0.5:
+            direction = "augmente" if angle_vel_corr > 0 else "diminue"
+            insights.append(f"📐 **Effet Angle :** La vitesse {direction} avec l'angle (r={angle_vel_corr:.3f})")
+    
+    # Insight 3: Meilleure expérience
+    if stats_df['success_rate'].notna().any():
+        best_exp = stats_df.loc[stats_df['success_rate'].idxmax()]
+        insights.append(f"🏆 **Meilleure détection :** {best_exp['exp_name']} avec {best_exp['success_rate']:.1f}% de succès")
+    
+    # Insight 4: Valeurs extrêmes
+    if stats_df['krr'].notna().any():
+        highest_krr_exp = stats_df.loc[stats_df['krr'].idxmax()]
+        lowest_krr_exp = stats_df.loc[stats_df['krr'].idxmin()]
+        insights.append(f"📊 **Krr extrêmes :** Max={highest_krr_exp['krr']:.6f} ({highest_krr_exp['exp_name']}), Min={lowest_krr_exp['krr']:.6f} ({lowest_krr_exp['exp_name']})")
+    
+    # Affichage des insights
+    if insights:
+        for insight in insights:
+            st.markdown(f"- {insight}")
+    else:
+        st.info("Ajoutez plus d'expériences pour des insights automatiques")
+
+# === SECTION BONUS: AIDE ET DOCUMENTATION ===
+with st.expander("📚 Aide et Documentation"):
+    st.markdown("""
+    ## 📚 Guide d'Utilisation Complet
+    
+    ### 🚀 Démarrage Rapide
+    1. **Cliquez sur les boutons "Test 1, 2, 3"** pour voir l'interface immédiatement
+    2. **Ou uploadez votre fichier CSV** pour analyser vos vraies données
+    
+    ### 📊 Graphiques Disponibles
+    - **Krr vs Teneur en eau** : Effet de l'humidité sur le coefficient de résistance
+    - **Krr vs Angle** : Impact de l'inclinaison 
+    - **Comparaison coefficients** : μ Cinétique, μ Rolling, μ Énergétique, Krr
+    - **Vitesses vs Angle** : V₀ et Vf selon l'inclinaison
+    - **Coefficients vs Temps** : Évolution temporelle pour chaque expérience
+    
+    ### 📋 Gestion des Expériences
+    - **Tableau récapitulatif** : Vue d'ensemble de toutes les expériences
+    - **Suppression individuelle** : Via le selectbox
+    - **Suppression totale** : Bouton "Effacer tout"
+    - **Export CSV** : Bouton dans chaque section
+    
+    ### 🔬 Analyse Comparative (2+ expériences)
+    - **Effet Humidité** : Corrélations eau ↔ friction
+    - **Effet Angle** : Impact inclinaison ↔ cinématique  
+    - **Matrice Corrélations** : Heatmap de toutes les relations
+    - **Export détaillé** : CSV complet avec toutes les métriques
+    
+    ### 📁 Format de Fichier Requis
+    Votre CSV doit contenir :
+    - `Frame` : Numéro d'image
+    - `X_center` : Position X du centre de la sphère
+    - `Y_center` : Position Y du centre de la sphère  
+    - `Radius` : Rayon détecté de la sphère
+    
+    ### 🎯 Détection Automatique
+    - **Angle** : Détecté depuis le nom du fichier (ex: "20D_0W_3.csv" → 20°)
+    - **Calibration** : Calculée automatiquement depuis le rayon détecté
+    - **Nettoyage données** : Suppression automatique des points aberrants
+    
+    ### ⚠️ Valeurs Attendues
+    - **Krr normal** : 0.03 - 0.15 
+    - **μ Cinétique** : 0.01 - 0.05 typique
+    - **Vitesses** : 50 - 300 mm/s selon l'angle
+    - **Succès détection** : >80% recommandé
+    """)
+
+# === SECTION BONUS: EXPORT GLOBAL ===
+if st.session_state.experiments_data:
+    st.markdown("---")
+    st.markdown("## 📥 Export Global")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        # Export résumé simple
+        if st.button("📋 Export Résumé Simple"):
+            simple_export = []
+            for name, data in st.session_state.experiments_data.items():
+                metrics = data.get('metrics', {})
+                simple_export.append({
+                    'Expérience': name,
+                    'Eau_%': data.get('water_content', 0),
+                    'Angle_deg': data.get('angle', 15),
+                    'Krr': metrics.get('Krr', 0),
+                    'mu_Cinétique': metrics.get('mu_kinetic_avg', 0),
+                    'V0_mm_s': metrics.get('v0_mms', 0),
+                    'Succès_%': data.get('success_rate', 0)
+                })
+            
+            simple_df = pd.DataFrame(simple_export)
+            csv_simple = simple_df.to_csv(index=False)
+            st.download_button(
+                label="Télécharger Résumé",
+                data=csv_simple,
+                file_name="resume_simple_experiences.csv",
+                mime="text/csv"
+            )
+    
+    with col2:
+        # Export complet
+        if st.button("📊 Export Données Complètes"):
+            complete_export = []
+            for name, data in st.session_state.experiments_data.items():
+                metrics = data.get('metrics', {})
+                complete_export.append({
+                    'Expérience': name,
+                    'Date_Analyse': pd.Timestamp.now().strftime('%Y-%m-%d %H:%M'),
+                    'Teneur_eau_%': data.get('water_content', 0),
+                    'Angle_deg': data.get('angle', 15),
+                    'Type_sphère': data.get('sphere_type', 'N/A'),
+                    'Krr': metrics.get('Krr', 0),
+                    'mu_kinetic': metrics.get('mu_kinetic_avg', 0),
+                    'mu_rolling': metrics.get('mu_rolling_avg', 0),
+                    'mu_energetic': metrics.get('mu_energetic', 0),
+                    'v0_mm_s': metrics.get('v0_mms', 0),
+                    'vf_mm_s': metrics.get('vf_mms', 0),
+                    'accel_max_mm_s2': metrics.get('max_acceleration_mms2', 0),
+                    'distance_mm': metrics.get('total_distance_mm', 0),
+                    'energie_efficacité_%': metrics.get('energy_efficiency_percent', 0),
+                    'taux_succès_%': data.get('success_rate', 0),
+                    'durée_s': metrics.get('duration_s', 0)
+                })
+            
+            complete_df = pd.DataFrame(complete_export)
+            csv_complete = complete_df.to_csv(index=False)
+            st.download_button(
+                label="Télécharger Complet",
+                data=csv_complete,
+                file_name="donnees_completes_friction_krr.csv",
+                mime="text/csv"
+            )
+    
+    with col3:
+        # Export pour publication
+        if st.button("📑 Export Publication"):
+            pub_export = []
+            for name, data in st.session_state.experiments_data.items():
+                metrics = data.get('metrics', {})
+                pub_export.append({
+                    'Sample_ID': name,
+                    'Water_Content_percent': data.get('water_content', 0),
+                    'Inclination_Angle_deg': data.get('angle', 15),
+                    'Rolling_Resistance_Coefficient': metrics.get('Krr', 0),
+                    'Kinetic_Friction_Coefficient': metrics.get('mu_kinetic_avg', 0),
+                    'Initial_Velocity_mm_s': metrics.get('v0_mms', 0),
+                    'Final_Velocity_mm_s': metrics.get('vf_mms', 0),
+                    'Maximum_Acceleration_mm_s2': metrics.get('max_acceleration_mms2', 0),
+                    'Total_Distance_mm': metrics.get('total_distance_mm', 0),
+                    'Energy_Efficiency_percent': metrics.get('energy_efficiency_percent', 0),
+                    'Detection_Success_Rate_percent': data.get('success_rate', 0)
+                })
+            
+            pub_df = pd.DataFrame(pub_export)
+            csv_pub = pub_df.to_csv(index=False)
+            st.download_button(
+                label="Télécharger Publication",
+                data=csv_pub,
+                file_name="data_for_publication.csv",
+                mime="text/csv"
+            )
+
+# === FOOTER FINAL ===
+st.markdown("---")
 st.markdown(f"""
-<div style="text-align: center; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 2rem; border-radius: 10px;">
-    <h2>🔬 Interface Complète - Friction + Krr +
+<div style="text-align: center; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 2rem; border-radius: 10px; margin: 1rem 0;">
+    <h2>🔬 Interface Complète - Friction + Krr + Gestion Expériences</h2>
+    <p><strong>🎯 TOUT-EN-UN :</strong> Graphiques Krr, Analyse Friction, Gestion Expériences, Corrélations</p>
+    <p><strong>📊 Statut Actuel :</strong> {len(st.session_state.experiments_data)} expérience(s) chargée(s)</p>
+    <p><strong>✅ Fonctionnalités Actives :</strong><br>
+    📊 Graphiques Krr {'✓' if st.session_state.experiments_data else '○'} | 
+    🔥 Coefficients Friction {'✓' if st.session_state.experiments_data else '○'} | 
+    📋 Tableau Gestion {'✓' if st.session_state.experiments_data else '○'} | 
+    🔬 Analyse Comparative {'✓' if len(st.session_state.experiments_data) >= 2 else '○ (2+ exp required)'}
+    </p>
+    <p><strong>🎓 Développé pour :</strong> Département des Sciences de la Terre Cosmique, Université d'Osaka</p>
+    <p><strong>🔬 Recherche :</strong> Résistance au roulement sur substrat granulaire humide</p>
+    <p><em>🚀 Interface finale combinant TOUS les besoins d'analyse !</em></p>
+</div>
+""", unsafe_allow_html=True)
+
+# === FIN DU CODE ===
