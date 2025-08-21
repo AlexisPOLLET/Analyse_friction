@@ -310,6 +310,399 @@ def calculate_krr_robust(df_valid, fps=250, angle_deg=15.0,
         diagnostic["messages"].append(f"❌ Erreur inattendue: {str(e)}")
         return None, diagnostic
 
+# ==================== ANALYSE DE TRACE/GROOVE ====================
+
+def calculate_groove_metrics(groove_depth_mm, groove_width_mm, groove_length_mm, 
+                           sphere_radius_mm, sphere_mass_g, angle_deg, water_content):
+    """Calcul des métriques complètes de la trace laissée par la sphère"""
+    
+    # Paramètres de base
+    sphere_density_kg_m3 = sphere_mass_g / ((4/3) * np.pi * (sphere_radius_mm/1000)**3) * 1000  # kg/m³
+    granular_density_kg_m3 = 1550  # Densité typique du sable (peut être paramétrable)
+    
+    # === MÉTRIQUES GÉOMÉTRIQUES DE LA TRACE ===
+    
+    # Ratio de pénétration (métrique clé de la littérature)
+    penetration_ratio = groove_depth_mm / (sphere_radius_mm * 2)  # δ/R
+    
+    # Volume de la trace
+    groove_volume_mm3 = groove_depth_mm * groove_width_mm * groove_length_mm * 0.5  # Approximation triangulaire
+    groove_volume_cm3 = groove_volume_mm3 / 1000
+    
+    # Surface de contact
+    contact_area_mm2 = groove_width_mm * groove_length_mm
+    contact_area_cm2 = contact_area_mm2 / 100
+    
+    # Forme de la trace (allongement)
+    groove_aspect_ratio = groove_length_mm / groove_width_mm
+    
+    # === MÉTRIQUES PHYSIQUES ET COMPARAISON LITTÉRATURE ===
+    
+    # Rapport de densité (métrique fondamentale)
+    density_ratio = sphere_density_kg_m3 / granular_density_kg_m3  # ρs/ρg
+    
+    # Prédiction théorique selon Darbois Texier et al.
+    # δ/R = Cρ × (ρs/ρg)^n avec n ≈ 0.75 et Cρ ≈ 0.5-0.6
+    C_rho = 0.55  # Constante empirique
+    theoretical_penetration_ratio = C_rho * (density_ratio ** 0.75)
+    
+    # Écart par rapport à la théorie
+    theory_deviation = abs(penetration_ratio - theoretical_penetration_ratio) / theoretical_penetration_ratio * 100
+    
+    # === EFFET DE L'HUMIDITÉ SUR LA TRACE ===
+    
+    # Facteur d'humidité sur la pénétration (empirique)
+    humidity_factor = 1 + (water_content / 100) * 0.2  # 20% d'augmentation max
+    corrected_theoretical_ratio = theoretical_penetration_ratio * humidity_factor
+    
+    # === MÉTRIQUES ÉNERGÉTIQUES LIÉES À LA TRACE ===
+    
+    # Énergie de déformation du substrat
+    # E_deformation ≈ Volume_displaced × Stress_yield
+    yield_stress_Pa = 1000 + water_content * 50  # Contrainte de cisaillement (Pa)
+    deformation_energy_mJ = groove_volume_cm3 * yield_stress_Pa / 1000  # mJ
+    
+    # Travail de pénétration
+    penetration_force_mN = groove_width_mm * groove_depth_mm * yield_stress_Pa / 1000  # mN
+    penetration_work_mJ = penetration_force_mN * groove_length_mm / 1000  # mJ
+    
+    # === CLASSIFICATION DU RÉGIME ===
+    
+    # Détermination du régime selon Van Wal et al.
+    if penetration_ratio < 0.03:
+        regime = "No-plowing (glissement surface)"
+        regime_color = "green"
+    elif penetration_ratio < 0.1:
+        regime = "Micro-plowing (pénétration faible)"
+        regime_color = "orange"
+    else:
+        regime = "Deep-plowing (pénétration profonde)"
+        regime_color = "red"
+    
+    # === COEFFICIENT DE TRAÎNÉE SPÉCIFIQUE ===
+    
+    # Coefficient de résistance lié à la formation de trace
+    # Basé sur l'aire de contact et la profondeur
+    groove_drag_coefficient = (groove_depth_mm / sphere_radius_mm) * (contact_area_mm2 / (np.pi * sphere_radius_mm**2))
+    
+    # === INDICATEURS DE QUALITÉ DE MESURE ===
+    
+    # Symétrie de la trace (idéalement proche de 1)
+    groove_symmetry = min(groove_width_mm, groove_depth_mm) / max(groove_width_mm, groove_depth_mm)
+    
+    # Consistance avec la physique
+    physics_consistency = "Bon" if theory_deviation < 25 else "Moyen" if theory_deviation < 50 else "Faible"
+    
+    return {
+        # Métriques géométriques de base
+        'groove_depth_mm': groove_depth_mm,
+        'groove_width_mm': groove_width_mm,
+        'groove_length_mm': groove_length_mm,
+        'groove_volume_mm3': groove_volume_mm3,
+        'groove_volume_cm3': groove_volume_cm3,
+        'contact_area_mm2': contact_area_mm2,
+        'groove_aspect_ratio': groove_aspect_ratio,
+        'groove_symmetry': groove_symmetry,
+        
+        # Métriques physiques fondamentales
+        'penetration_ratio': penetration_ratio,
+        'density_ratio': density_ratio,
+        'sphere_density_kg_m3': sphere_density_kg_m3,
+        'granular_density_kg_m3': granular_density_kg_m3,
+        
+        # Comparaison avec la théorie
+        'theoretical_penetration_ratio': theoretical_penetration_ratio,
+        'corrected_theoretical_ratio': corrected_theoretical_ratio,
+        'theory_deviation_percent': theory_deviation,
+        'physics_consistency': physics_consistency,
+        
+        # Effets d'humidité
+        'humidity_factor': humidity_factor,
+        
+        # Métriques énergétiques
+        'deformation_energy_mJ': deformation_energy_mJ,
+        'penetration_work_mJ': penetration_work_mJ,
+        'yield_stress_Pa': yield_stress_Pa,
+        'penetration_force_mN': penetration_force_mN,
+        
+        # Classification et traînée
+        'regime': regime,
+        'regime_color': regime_color,
+        'groove_drag_coefficient': groove_drag_coefficient,
+        
+        # Constantes utilisées
+        'C_rho_used': C_rho,
+        'density_exponent': 0.75
+    }
+
+def create_groove_analysis_interface():
+    """Interface pour l'analyse de trace"""
+    
+    st.markdown("""
+    ## 🛤️ Analyse de la Trace Laissée par la Sphère
+    *Mesures post-expérience de la déformation du substrat granulaire*
+    """)
+    
+    with st.expander("📏 Mesures de la Trace (Groove)", expanded=True):
+        st.markdown("""
+        **Instructions de mesure :**
+        1. Mesurez immédiatement après l'expérience (avant que la trace ne s'efface)
+        2. Profondeur maximale : utilisez une règle graduée
+        3. Largeur moyenne : mesurez en 3 points espacés
+        4. Longueur totale : du début à la fin de la trace
+        """)
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            groove_depth = st.number_input(
+                "Profondeur maximale (mm)", 
+                value=2.0, 
+                min_value=0.0, 
+                max_value=50.0, 
+                step=0.1,
+                help="Profondeur maximale mesurée dans la trace"
+            )
+        
+        with col2:
+            groove_width = st.number_input(
+                "Largeur moyenne (mm)", 
+                value=15.0, 
+                min_value=0.0, 
+                max_value=100.0, 
+                step=0.5,
+                help="Largeur moyenne de la trace (3 mesures)"
+            )
+        
+        with col3:
+            groove_length = st.number_input(
+                "Longueur totale (mm)", 
+                value=150.0, 
+                min_value=0.0, 
+                max_value=1000.0, 
+                step=1.0,
+                help="Longueur totale de la trace visible"
+            )
+        
+        return groove_depth, groove_width, groove_length
+
+def create_groove_analysis_section(groove_metrics, experiment_name="Expérience"):
+    """Section complète d'analyse de trace"""
+    
+    st.markdown("### 🛤️ Résultats d'Analyse de Trace")
+    
+    # === CARTES MÉTRIQUES PRINCIPALES ===
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        penetration_ratio = groove_metrics['penetration_ratio']
+        st.markdown(f"""
+        <div class="metric-card" style="background: linear-gradient(135deg, #8e44ad 0%, #9b59b6 100%);">
+            <h3>🎯 Ratio δ/R</h3>
+            <h2>{penetration_ratio:.4f}</h2>
+            <p>Pénétration normalisée</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col2:
+        volume_cm3 = groove_metrics['groove_volume_cm3']
+        st.markdown(f"""
+        <div class="metric-card" style="background: linear-gradient(135deg, #e67e22 0%, #f39c12 100%);">
+            <h3>📦 Volume</h3>
+            <h2>{volume_cm3:.2f} cm³</h2>
+            <p>Volume de trace</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col3:
+        density_ratio = groove_metrics['density_ratio']
+        st.markdown(f"""
+        <div class="metric-card" style="background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%);">
+            <h3>⚖️ ρs/ρg</h3>
+            <h2>{density_ratio:.2f}</h2>
+            <p>Rapport densités</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col4:
+        regime = groove_metrics['regime']
+        regime_color = groove_metrics['regime_color']
+        st.markdown(f"""
+        <div class="metric-card" style="background: linear-gradient(135deg, #{regime_color}50 0%, #{regime_color}80 100%);">
+            <h3>🏷️ Régime</h3>
+            <h2 style="font-size: 1rem;">{regime.split('(')[0]}</h2>
+            <p>{regime.split('(')[1].rstrip(')')}</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # === COMPARAISON AVEC LA THÉORIE ===
+    
+    st.markdown("#### 📊 Comparaison avec la Littérature")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Graphique de comparaison théorie vs mesure
+        fig_theory = go.Figure()
+        
+        # Point expérimental
+        fig_theory.add_trace(go.Scatter(
+            x=[density_ratio],
+            y=[penetration_ratio],
+            mode='markers',
+            marker=dict(color='red', size=15, symbol='circle'),
+            name=f'{experiment_name}',
+            hovertemplate='Densité ratio: %{x:.2f}<br>δ/R mesuré: %{y:.4f}<extra></extra>'
+        ))
+        
+        # Courbe théorique
+        density_range = np.linspace(0.5, 5.0, 100)
+        theoretical_curve = groove_metrics['C_rho_used'] * (density_range ** 0.75)
+        
+        fig_theory.add_trace(go.Scatter(
+            x=density_range,
+            y=theoretical_curve,
+            mode='lines',
+            line=dict(color='blue', width=2, dash='dash'),
+            name='Théorie (Darbois Texier)',
+            hovertemplate='Densité ratio: %{x:.2f}<br>δ/R théorique: %{y:.4f}<extra></extra>'
+        ))
+        
+        # Courbe corrigée humidité
+        corrected_curve = theoretical_curve * groove_metrics['humidity_factor']
+        fig_theory.add_trace(go.Scatter(
+            x=density_range,
+            y=corrected_curve,
+            mode='lines',
+            line=dict(color='green', width=2),
+            name='Théorie + Humidité',
+            hovertemplate='Densité ratio: %{x:.2f}<br>δ/R corrigé: %{y:.4f}<extra></extra>'
+        ))
+        
+        fig_theory.update_layout(
+            title="Comparaison δ/R vs ρs/ρg",
+            xaxis_title="Rapport de densité (ρs/ρg)",
+            yaxis_title="Ratio de pénétration (δ/R)",
+            height=400,
+            showlegend=True
+        )
+        
+        st.plotly_chart(fig_theory, use_container_width=True)
+    
+    with col2:
+        # Métriques de comparaison
+        theory_dev = groove_metrics['theory_deviation_percent']
+        st.metric("Écart à la théorie", f"{theory_dev:.1f}%")
+        
+        physics_consistency = groove_metrics['physics_consistency']
+        if physics_consistency == "Bon":
+            st.success(f"✅ Consistance physique: {physics_consistency}")
+        elif physics_consistency == "Moyen":
+            st.warning(f"⚠️ Consistance physique: {physics_consistency}")
+        else:
+            st.error(f"❌ Consistance physique: {physics_consistency}")
+        
+        st.metric("Facteur humidité", f"{groove_metrics['humidity_factor']:.2f}")
+        
+        # Prédictions théoriques
+        st.markdown("**Prédictions théoriques:**")
+        st.write(f"δ/R théorique: {groove_metrics['theoretical_penetration_ratio']:.4f}")
+        st.write(f"δ/R + humidité: {groove_metrics['corrected_theoretical_ratio']:.4f}")
+        st.write(f"δ/R mesuré: {groove_metrics['penetration_ratio']:.4f}")
+    
+    # === ANALYSE ÉNERGÉTIQUE DE LA TRACE ===
+    
+    st.markdown("#### ⚡ Analyse Énergétique de la Déformation")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        deformation_energy = groove_metrics['deformation_energy_mJ']
+        st.metric("Énergie de déformation", f"{deformation_energy:.2f} mJ")
+        
+    with col2:
+        penetration_work = groove_metrics['penetration_work_mJ']
+        st.metric("Travail de pénétration", f"{penetration_work:.2f} mJ")
+        
+    with col3:
+        groove_drag = groove_metrics['groove_drag_coefficient']
+        st.metric("Coefficient traînée groove", f"{groove_drag:.4f}")
+    
+    # === ANALYSE MORPHOLOGIQUE ===
+    
+    st.markdown("#### 📐 Analyse Morphologique de la Trace")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Graphique 3D conceptuel de la trace
+        fig_morph = go.Figure()
+        
+        # Profil de la trace (section transversale)
+        width_points = np.linspace(-groove_metrics['groove_width_mm']/2, groove_metrics['groove_width_mm']/2, 50)
+        depth_profile = groove_metrics['groove_depth_mm'] * (1 - (2*width_points/groove_metrics['groove_width_mm'])**2)
+        depth_profile = np.maximum(depth_profile, 0)  # Assurer profondeur positive
+        
+        fig_morph.add_trace(go.Scatter(
+            x=width_points,
+            y=-depth_profile,  # Négatif car profondeur
+            mode='lines',
+            fill='tozeroy',
+            name='Profil de trace',
+            line=dict(color='brown', width=3)
+        ))
+        
+        fig_morph.update_layout(
+            title="Profil Transversal de la Trace",
+            xaxis_title="Position latérale (mm)",
+            yaxis_title="Profondeur (mm)",
+            height=300,
+            yaxis=dict(autorange="reversed")
+        )
+        
+        st.plotly_chart(fig_morph, use_container_width=True)
+    
+    with col2:
+        # Métriques morphologiques
+        aspect_ratio = groove_metrics['groove_aspect_ratio']
+        st.metric("Rapport d'aspect L/W", f"{aspect_ratio:.1f}")
+        
+        symmetry = groove_metrics['groove_symmetry']
+        st.metric("Symétrie de trace", f"{symmetry:.2f}")
+        
+        contact_area = groove_metrics['contact_area_mm2']
+        st.metric("Aire de contact", f"{contact_area:.0f} mm²")
+        
+        # Indicateur de qualité de trace
+        if symmetry > 0.7 and aspect_ratio > 5:
+            st.success("✅ Trace de bonne qualité")
+        elif symmetry > 0.5:
+            st.warning("⚠️ Trace de qualité moyenne")
+        else:
+            st.error("❌ Trace de qualité faible")
+
+def add_groove_to_experiment_metrics(experiment_metrics, groove_metrics):
+    """Ajouter les métriques de trace aux métriques d'expérience"""
+    
+    # Fusionner les dictionnaires
+    enhanced_metrics = experiment_metrics.copy()
+    
+    # Ajouter les métriques de trace avec préfixe
+    for key, value in groove_metrics.items():
+        enhanced_metrics[f'groove_{key}'] = value
+    
+    # Calculer des métriques combinées
+    enhanced_metrics['total_energy_dissipated_mJ'] = (
+        experiment_metrics.get('energy_dissipated_mJ', 0) + 
+        groove_metrics.get('deformation_energy_mJ', 0)
+    )
+    
+    enhanced_metrics['plowing_regime'] = groove_metrics.get('regime', 'Unknown')
+    enhanced_metrics['plowing_ratio'] = groove_metrics.get('penetration_ratio', 0)
+    
+    return enhanced_metrics
+
 # ==================== ANALYSE DE FRICTION AVANCÉE ====================
 
 def calculate_advanced_friction_metrics(df_valid, fps=250, angle_deg=15.0, 
@@ -1229,6 +1622,9 @@ with st.expander("➕ Ajouter une nouvelle expérience", expanded=True):
         help="Fichier CSV avec colonnes: Frame, X_center, Y_center, Radius"
     )
     
+    # === NOUVELLE SECTION: MESURES DE TRACE ===
+    groove_depth, groove_width, groove_length = create_groove_analysis_interface()
+    
     if st.button("📊 Ajouter l'expérience") and uploaded_file is not None:
         
         # Détecter l'angle depuis le nom du fichier si possible
@@ -1245,37 +1641,68 @@ with st.expander("➕ Ajouter une nouvelle expérience", expanded=True):
         exp_data = load_detection_data_enhanced(uploaded_file, exp_name, water_content, angle, sphere_type)
         
         if exp_data:
+            # Calculer les métriques de trace
+            groove_metrics = calculate_groove_metrics(
+                groove_depth, groove_width, groove_length,
+                manual_radius, 10.0, angle, water_content
+            )
+            
+            # Ajouter l'analyse de trace
+            st.markdown("---")
+            create_groove_analysis_section(groove_metrics, exp_name)
+            
+            # Fusionner les métriques
+            enhanced_metrics = add_groove_to_experiment_metrics(exp_data['metrics'], groove_metrics)
+            exp_data['metrics'] = enhanced_metrics
+            exp_data['groove_metrics'] = groove_metrics
+            
             st.session_state.experiments_data[exp_name] = exp_data
             st.success(f"✅ Expérience '{exp_name}' ajoutée avec succès!")
             
             # Afficher un résumé des résultats
             metrics = exp_data['metrics']
             st.markdown(f"""
-            ### 📋 Résumé des Résultats
+            ### 📋 Résumé des Résultats Complets
             
-            **Coefficient Krr :** {safe_format_value(metrics.get('Krr'))}
+            **🎯 Coefficient Krr :** {safe_format_value(metrics.get('Krr'))}
             
-            **Coefficients de Friction :**
+            **🔥 Coefficients de Friction :**
             - μ Cinétique : {safe_format_value(metrics.get('mu_kinetic_avg'), '{:.4f}')}
             - μ Rolling : {safe_format_value(metrics.get('mu_rolling_avg'), '{:.4f}')}
             - μ Énergétique : {safe_format_value(metrics.get('mu_energetic'), '{:.4f}')}
             
-            **Vitesses :**
+            **🛤️ Analyse de Trace :**
+            - Ratio δ/R : {safe_format_value(metrics.get('groove_penetration_ratio'), '{:.4f}')}
+            - Régime : {safe_format_value(metrics.get('plowing_regime'), '{}')}
+            - Volume trace : {safe_format_value(metrics.get('groove_groove_volume_cm3'), '{:.2f}')} cm³
+            - Écart théorie : {safe_format_value(metrics.get('groove_theory_deviation_percent'), '{:.1f}')}%
+            
+            **⚡ Énergies :**
+            - Dissipation cinétique : {safe_format_value(metrics.get('energy_dissipated_mJ'), '{:.2f}')} mJ
+            - Déformation substrat : {safe_format_value(metrics.get('groove_deformation_energy_mJ'), '{:.2f}')} mJ
+            - **Total dissipé : {safe_format_value(metrics.get('total_energy_dissipated_mJ'), '{:.2f}')} mJ**
+            
+            **🏃 Vitesses :**
             - Initiale : {safe_format_value(metrics.get('v0_mms'), '{:.1f}')} mm/s
             - Finale : {safe_format_value(metrics.get('vf_mms'), '{:.1f}')} mm/s
             - Décélération : {safe_format_value(metrics.get('deceleration_percent'), '{:.1f}')}%
             
-            **Distance parcourue :** {safe_format_value(metrics.get('total_distance_mm'), '{:.1f}')} mm
+            **📏 Géométrie :**
+            - Distance parcourue : {safe_format_value(metrics.get('total_distance_mm'), '{:.1f}')} mm
+            - Calibration : {safe_format_value(metrics.get('calibration_px_per_mm'), '{:.2f}')} px/mm
+            """)
+            
+            st.rerun()rue :** {safe_format_value(metrics.get('total_distance_mm'), '{:.1f}')} mm
             
             **Calibration utilisée :** {safe_format_value(metrics.get('calibration_px_per_mm'), '{:.2f}')} px/mm
             """)
             
             st.rerun()
 
-# Test rapide
+# Test rapide avec analyse de trace
 st.markdown("### 🧪 Test Rapide")
 
-if st.button("🔬 Tester avec données simulées (20°, 0% eau)"):
+if st.button("🔬 Tester avec données simulées + trace (20°, 0% eau)"):
     # Créer des données simulées réalistes
     frames = list(range(1, 108))
     data = []
@@ -1297,37 +1724,48 @@ if st.button("🔬 Tester avec données simulées (20°, 0% eau)"):
     
     st.info(f"Données simulées créées: {len(df_test)} frames, {len(df_valid_test)} détections valides")
     
-    # Test du calcul
+    # Test du calcul avec trace simulée
     metrics_test = calculate_friction_metrics_enhanced(df_valid_test, 0.0, 20.0, "Solide")
     
     if metrics_test:
-        st.success("✅ Test réussi ! Le calcul de friction fonctionne.")
+        # Ajouter trace simulée
+        groove_test = calculate_groove_metrics(1.5, 12.0, 120.0, 15.0, 10.0, 20.0, 0.0)
+        enhanced_metrics_test = add_groove_to_experiment_metrics(metrics_test, groove_test)
+        
+        st.success("✅ Test réussi ! Calcul complet friction + trace fonctionne.")
         
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
-            st.metric("Krr", safe_format_value(metrics_test.get('Krr')))
+            st.metric("Krr", safe_format_value(enhanced_metrics_test.get('Krr')))
         with col2:
-            st.metric("μ Cinétique", safe_format_value(metrics_test.get('mu_kinetic_avg'), '{:.4f}'))
+            st.metric("μ Cinétique", safe_format_value(enhanced_metrics_test.get('mu_kinetic_avg'), '{:.4f}'))
         with col3:
-            st.metric("μ Rolling", safe_format_value(metrics_test.get('mu_rolling_avg'), '{:.4f}'))
+            st.metric("δ/R", safe_format_value(enhanced_metrics_test.get('groove_penetration_ratio'), '{:.4f}'))
         with col4:
-            st.metric("μ Énergétique", safe_format_value(metrics_test.get('mu_energetic'), '{:.4f}'))
+            st.metric("Régime", safe_format_value(enhanced_metrics_test.get('plowing_regime'), '{}'))
+        
+        # Affichage de l'analyse de trace test
+        st.markdown("#### 🛤️ Analyse de Trace Test")
+        create_groove_analysis_section(groove_test, "Test")
 
-# Affichage des expériences
+# Affichage des expériences avec métriques de trace
 if st.session_state.experiments_data:
     st.markdown("### 📋 Expériences Chargées")
     
     exp_summary = []
     for name, data in st.session_state.experiments_data.items():
+        metrics = data['metrics']
         exp_summary.append({
             'Expérience': name,
             'Teneur en eau (%)': data['water_content'],
             'Angle (°)': data['angle'],
             'Type de sphère': data['sphere_type'],
-            'Krr': safe_format_value(data['metrics'].get('Krr')),
-            'μ Cinétique': safe_format_value(data['metrics'].get('mu_kinetic_avg'), '{:.4f}'),
-            'μ Rolling': safe_format_value(data['metrics'].get('mu_rolling_avg'), '{:.4f}'),
+            'Krr': safe_format_value(metrics.get('Krr')),
+            'μ Cinétique': safe_format_value(metrics.get('mu_kinetic_avg'), '{:.4f}'),
+            'μ Rolling': safe_format_value(metrics.get('mu_rolling_avg'), '{:.4f}'),
+            'δ/R': safe_format_value(metrics.get('groove_penetration_ratio'), '{:.4f}'),
+            'Régime': safe_format_value(metrics.get('plowing_regime'), '{}'),
             'Taux de succès (%)': safe_format_value(data.get('success_rate'), '{:.1f}')
         })
     
@@ -1343,7 +1781,7 @@ if st.session_state.experiments_data:
     
     if len(selected_experiments) >= 2:
         st.markdown("---")
-        st.markdown("## 📊 Analyse Comparative Standard")
+        st.markdown("## 📊 Analyse Comparative Complète")
         
         # Préparer les données pour la comparaison standard
         comparison_data = []
@@ -1361,63 +1799,217 @@ if st.session_state.experiments_data:
                 'vf_mms': metrics.get('vf_mms'),
                 'total_distance_mm': metrics.get('total_distance_mm'),
                 'deceleration_percent': metrics.get('deceleration_percent'),
-                'success_rate': exp.get('success_rate')
+                'success_rate': exp.get('success_rate'),
+                # Nouvelles métriques de trace
+                'penetration_ratio': metrics.get('groove_penetration_ratio'),
+                'groove_volume': metrics.get('groove_groove_volume_cm3'),
+                'theory_deviation': metrics.get('groove_theory_deviation_percent'),
+                'plowing_regime': metrics.get('plowing_regime'),
+                'total_energy_dissipated': metrics.get('total_energy_dissipated_mJ')
             })
         
         comp_df = pd.DataFrame(comparison_data)
         
-        # Graphiques de comparaison standard
-        col1, col2 = st.columns(2)
+        # === ONGLETS DE COMPARAISON ENRICHIS ===
         
-        with col1:
-            # Krr vs Teneur en eau
-            valid_krr = comp_df.dropna(subset=['Krr'])
-            if len(valid_krr) > 0:
-                try:
-                    fig_krr = px.scatter(
-                        valid_krr, 
-                        x='Teneur_eau', 
-                        y='Krr',
+        tab1, tab2, tab3, tab4 = st.tabs([
+            "🔥 Friction & Cinématique", 
+            "🛤️ Analyse de Traces", 
+            "⚡ Énergies & Régimes",
+            "📊 Corrélations Avancées"
+        ])
+        
+        with tab1:
+            # Graphiques de comparaison standard (existant)
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Krr vs Teneur en eau
+                valid_krr = comp_df.dropna(subset=['Krr'])
+                if len(valid_krr) > 0:
+                    try:
+                        fig_krr = px.scatter(
+                            valid_krr, 
+                            x='Teneur_eau', 
+                            y='Krr',
+                            color='Angle',
+                            hover_data=['Expérience'],
+                            title="🔍 Coefficient Krr vs Teneur en Eau"
+                        )
+                        fig_krr.update_layout(height=400)
+                        st.plotly_chart(fig_krr, use_container_width=True)
+                    except Exception as e:
+                        st.error(f"Erreur création graphique Krr: {str(e)}")
+            
+            with col2:
+                # Vitesses vs Angle
+                valid_velocities = comp_df.dropna(subset=['v0_mms', 'vf_mms'])
+                if len(valid_velocities) > 0:
+                    try:
+                        fig_vel = go.Figure()
+                        fig_vel.add_trace(go.Scatter(
+                            x=valid_velocities['Angle'], 
+                            y=valid_velocities['v0_mms'],
+                            mode='markers+lines', 
+                            name='V₀ (initiale)',
+                            marker=dict(color='blue', size=10)
+                        ))
+                        fig_vel.add_trace(go.Scatter(
+                            x=valid_velocities['Angle'], 
+                            y=valid_velocities['vf_mms'],
+                            mode='markers+lines', 
+                            name='Vf (finale)',
+                            marker=dict(color='red', size=10)
+                        ))
+                        fig_vel.update_layout(
+                            title="🏃 Vitesses vs Angle",
+                            xaxis_title="Angle (°)",
+                            yaxis_title="Vitesse (mm/s)",
+                            height=400
+                        )
+                        st.plotly_chart(fig_vel, use_container_width=True)
+                    except Exception as e:
+                        st.error(f"Erreur création graphique vitesses: {str(e)}")
+        
+        with tab2:
+            st.markdown("### 🛤️ Comparaison des Traces et Pénétrations")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # δ/R vs Teneur en eau
+                valid_penetration = comp_df.dropna(subset=['penetration_ratio'])
+                if len(valid_penetration) > 0:
+                    fig_penetration = px.scatter(
+                        valid_penetration,
+                        x='Teneur_eau',
+                        y='penetration_ratio',
+                        color='Angle',
+                        size='groove_volume',
+                        hover_data=['Expérience', 'plowing_regime'],
+                        title="🎯 Ratio de Pénétration δ/R vs Humidité",
+                        labels={'penetration_ratio': 'δ/R', 'Teneur_eau': 'Teneur en eau (%)'}
+                    )
+                    st.plotly_chart(fig_penetration, use_container_width=True)
+            
+            with col2:
+                # Régimes de pénétration
+                valid_regime = comp_df.dropna(subset=['plowing_regime'])
+                if len(valid_regime) > 0:
+                    regime_counts = valid_regime['plowing_regime'].value_counts()
+                    fig_regime = px.pie(
+                        values=regime_counts.values,
+                        names=regime_counts.index,
+                        title="🏷️ Distribution des Régimes de Pénétration"
+                    )
+                    st.plotly_chart(fig_regime, use_container_width=True)
+            
+            # Volume de trace vs paramètres
+            st.markdown("#### 📦 Volume de Trace vs Paramètres")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                valid_volume = comp_df.dropna(subset=['groove_volume'])
+                if len(valid_volume) > 0:
+                    fig_volume_water = px.scatter(
+                        valid_volume,
+                        x='Teneur_eau',
+                        y='groove_volume',
                         color='Angle',
                         hover_data=['Expérience'],
-                        title="🔍 Coefficient Krr vs Teneur en Eau"
+                        title="Volume de Trace vs Humidité",
+                        labels={'groove_volume': 'Volume (cm³)', 'Teneur_eau': 'Teneur en eau (%)'}
                     )
-                    fig_krr.update_layout(height=400)
-                    st.plotly_chart(fig_krr, use_container_width=True)
-                except Exception as e:
-                    st.error(f"Erreur création graphique Krr: {str(e)}")
-        
-        with col2:
-            # Vitesses vs Angle
-            valid_velocities = comp_df.dropna(subset=['v0_mms', 'vf_mms'])
-            if len(valid_velocities) > 0:
-                try:
-                    fig_vel = go.Figure()
-                    fig_vel.add_trace(go.Scatter(
-                        x=valid_velocities['Angle'], 
-                        y=valid_velocities['v0_mms'],
-                        mode='markers+lines', 
-                        name='V₀ (initiale)',
-                        marker=dict(color='blue', size=10)
-                    ))
-                    fig_vel.add_trace(go.Scatter(
-                        x=valid_velocities['Angle'], 
-                        y=valid_velocities['vf_mms'],
-                        mode='markers+lines', 
-                        name='Vf (finale)',
-                        marker=dict(color='red', size=10)
-                    ))
-                    fig_vel.update_layout(
-                        title="🏃 Vitesses vs Angle",
-                        xaxis_title="Angle (°)",
-                        yaxis_title="Vitesse (mm/s)",
-                        height=400
+                    st.plotly_chart(fig_volume_water, use_container_width=True)
+            
+            with col2:
+                if len(valid_volume) > 0:
+                    fig_volume_angle = px.bar(
+                        valid_volume,
+                        x='Expérience',
+                        y='groove_volume',
+                        color='Teneur_eau',
+                        title="Volume de Trace par Expérience",
+                        labels={'groove_volume': 'Volume (cm³)'}
                     )
-                    st.plotly_chart(fig_vel, use_container_width=True)
-                except Exception as e:
-                    st.error(f"Erreur création graphique vitesses: {str(e)}")
+                    fig_volume_angle.update_xaxes(tickangle=45)
+                    st.plotly_chart(fig_volume_angle, use_container_width=True)
         
-        # NOUVELLE SECTION: Comparaison avancée des frictions
+        with tab3:
+            st.markdown("### ⚡ Analyse Énergétique Complète")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Énergie totale dissipée
+                valid_energy = comp_df.dropna(subset=['total_energy_dissipated'])
+                if len(valid_energy) > 0:
+                    fig_energy = px.bar(
+                        valid_energy,
+                        x='Expérience',
+                        y='total_energy_dissipated',
+                        color='Teneur_eau',
+                        title="⚡ Énergie Totale Dissipée",
+                        labels={'total_energy_dissipated': 'Énergie (mJ)'}
+                    )
+                    fig_energy.update_xaxes(tickangle=45)
+                    st.plotly_chart(fig_energy, use_container_width=True)
+            
+            with col2:
+                # Écart à la théorie vs humidité
+                valid_theory = comp_df.dropna(subset=['theory_deviation'])
+                if len(valid_theory) > 0:
+                    fig_theory_dev = px.scatter(
+                        valid_theory,
+                        x='Teneur_eau',
+                        y='theory_deviation',
+                        color='Angle',
+                        hover_data=['Expérience'],
+                        title="📊 Écart à la Théorie vs Humidité",
+                        labels={'theory_deviation': 'Écart (%)', 'Teneur_eau': 'Teneur en eau (%)'}
+                    )
+                    fig_theory_dev.add_hline(y=25, line_dash="dash", line_color="orange", 
+                                           annotation_text="Seuil acceptable (25%)")
+                    st.plotly_chart(fig_theory_dev, use_container_width=True)
+        
+        with tab4:
+            st.markdown("### 📊 Corrélations Multi-Paramètres")
+            
+            # Matrice de corrélation avancée
+            correlation_columns = ['Krr', 'penetration_ratio', 'groove_volume', 'total_energy_dissipated', 
+                                 'Teneur_eau', 'Angle', 'theory_deviation']
+            
+            available_corr_columns = [col for col in correlation_columns if col in comp_df.columns and comp_df[col].notna().any()]
+            
+            if len(available_corr_columns) >= 3:
+                corr_matrix = comp_df[available_corr_columns].corr()
+                
+                fig_corr = px.imshow(
+                    corr_matrix, 
+                    text_auto=True, 
+                    aspect="auto",
+                    title="🔗 Matrice de Corrélation Complète",
+                    color_continuous_scale="RdBu_r"
+                )
+                fig_corr.update_layout(height=500)
+                st.plotly_chart(fig_corr, use_container_width=True)
+                
+                # Corrélations les plus fortes
+                st.markdown("##### 🎯 Corrélations les Plus Significatives:")
+                
+                mask = np.triu(np.ones_like(corr_matrix, dtype=bool), k=1)
+                corr_values = corr_matrix.where(mask).stack().reset_index()
+                corr_values.columns = ['Var1', 'Var2', 'Correlation']
+                corr_values = corr_values.sort_values('Correlation', key=abs, ascending=False)
+                
+                for i, row in corr_values.head(5).iterrows():
+                    correlation_strength = "Très forte" if abs(row['Correlation']) > 0.8 else "Forte" if abs(row['Correlation']) > 0.6 else "Modérée"
+                    correlation_direction = "positive" if row['Correlation'] > 0 else "négative"
+                    
+                    st.markdown(f"- **{correlation_strength} corrélation {correlation_direction}** entre {row['Var1']} et {row['Var2']} (r = {row['Correlation']:.3f})")
+        
+        # Comparaison avancée des frictions (existante)
         st.markdown("---")
         create_friction_comparison_section(selected_experiments)
     
@@ -1560,5 +2152,198 @@ st.markdown("""
     <em>🔥 Analyse complète des coefficients de friction temporels - Université d'Osaka</em><br>
     📧 Département des Sciences de la Terre Cosmique<br>
     🔬 <strong>Fonctionnalités :</strong> 4 coefficients de friction, graphiques temporels, analyses multi-expériences, export complet
+</div>
+""", unsafe_allow_html=True)
+
+# Instructions d'utilisation si pas d'expériences
+else:
+    st.markdown("""
+    ## 🚀 Instructions d'Utilisation - Analyseur Complet Friction + Trace
+    
+    ### 🔥 **Fonctionnalités Complètes :**
+    
+    #### **4 Coefficients de Friction + Analyse de Trace :**
+    1. **🔥 μ Cinétique** : Friction directe grain-sphère (`F_résistance / F_normale`)
+    2. **🎯 μ Rolling** : Résistance pure au roulement (`μ_cinétique - tan(angle)`)
+    3. **⚡ μ Énergétique** : Basé sur dissipation d'énergie (`E_dissipée / (F_normale × distance)`)
+    4. **📊 Krr Référence** : Coefficient traditionnel de résistance au roulement
+    5. **🛤️ Analyse de Trace Complète** : δ/R, volume, régime de pénétration, validation théorique
+    
+    #### **🛤️ Nouvelles Métriques de Trace :**
+    - **🎯 Ratio δ/R** : Pénétration normalisée (comparaison littérature)
+    - **📦 Volume de trace** : Déformation totale du substrat
+    - **⚖️ Rapport densités** : ρs/ρg (paramètre fondamental)
+    - **🏷️ Classification régime** : No-plowing / Micro-plowing / Deep-plowing
+    - **📊 Validation théorique** : Écart aux prédictions Darbois Texier et al.
+    - **⚡ Énergie de déformation** : Travail de pénétration + déformation substrat
+    
+    #### **📈 Graphiques Automatiques Enrichis :**
+    - **🔥 Coefficients vs Temps** : Évolution temporelle complète
+    - **🛤️ Comparaison δ/R vs Théorie** : Validation avec littérature
+    - **📐 Profil de trace** : Visualisation morphologique 3D
+    - **⚡ Énergies combinées** : Cinétique + déformation substrat
+    - **🔗 Corrélations avancées** : Relations friction-pénétration
+    
+    #### **🔍 Analyses Multi-Expériences Avancées :**
+    - **💧 Effet Humidité** : Sur friction ET pénétration
+    - **📐 Effet Angle** : Influence sur tous les paramètres
+    - **🏷️ Distribution régimes** : Classification automatique
+    - **📊 Matrices corrélation** : Relations inter-paramètres
+    - **🎯 Insights automatiques** : Détection patterns physiques
+    
+    ### 📋 **Protocole Expérimental Intégré :**
+    
+    #### **Pendant l'expérience :**
+    1. **📂 Enregistrement vidéo** à 250 fps
+    2. **🎯 Détection sphère** avec marqueurs colorés
+    3. **📏 Calibration automatique** depuis rayon détecté
+    
+    #### **Immédiatement après l'expérience :**
+    4. **📏 Mesure trace** (URGENT avant effacement !) :
+       - Profondeur maximale (mm)
+       - Largeur moyenne (3 points)
+       - Longueur totale visible
+    
+    #### **Analyse complète :**
+    5. **📊 Upload fichier CSV** + paramètres expérimentation
+    6. **🛤️ Saisie mesures trace** dans l'interface
+    7. **🔬 Analyses automatiques** : friction + pénétration + validation
+    
+    ### 💡 **Pour votre fichier `20D_0W_3.csv` :**
+    
+    - **📂 Upload fichier** : Détection automatique angle 20°
+    - **💧 Humidité** : 0% (sols secs)
+    - **🛤️ Mesures trace** : Profondeur ~1-3mm, largeur ~10-20mm
+    - **📊 Résultats attendus** :
+      - μ cinétique ~0.2-0.4
+      - δ/R ~0.03-0.08 (no-plowing)
+      - Validation théorique <25% écart
+      - Krr ~0.04-0.08
+    
+    ### 🎯 **Résultats Automatiques Complets :**
+    
+    ✅ **Dashboard friction** : 4 cartes coefficients  
+    ✅ **Dashboard trace** : δ/R, volume, régime, validation  
+    ✅ **Graphiques temporels** : Évolution tous paramètres  
+    ✅ **Comparaison théorie** : Darbois Texier, Van Wal validations  
+    ✅ **Analyse énergétique** : Cinétique + déformation combinées  
+    ✅ **Export complet** : CSV détaillé + rapport scientifique  
+    
+    ### 🔬 **Innovation Scientifique :**
+    
+    **Premier système au monde** combinant :
+    - Analyse friction temporelle grain-sphère 4 coefficients
+    - Validation théorique traces δ/R vs littérature  
+    - Effet humidité sur friction ET pénétration
+    - Classification automatique régimes Van Wal
+    - Énergies dissipation complètes (cinétique + déformation)
+    
+    **Applications directes pour votre recherche Osaka University !** 🎓
+    """)
+
+# Footer enrichi
+st.markdown("---")
+st.markdown("""
+<div style="text-align: center; color: #666; padding: 1rem;">
+    🎓 <strong>Analyseur Complet Friction + Trace Grain-Sphère</strong><br>
+    <em>🔥 Premier système intégrant friction temporelle ET analyse de pénétration</em><br>
+    📧 Département des Sciences de la Terre Cosmique - Université d'Osaka<br>
+    🔬 <strong>Fonctionnalités :</strong> 4 coefficients friction + analyse trace δ/R + validation théorique + énergies combinées
+</div>
+""", unsafe_allow_html=True)
+    # Instructions d'utilisation si pas d'expériences
+else:
+    st.markdown("""
+    ## 🚀 Instructions d'Utilisation - Analyseur Complet Friction + Trace
+    
+    ### 🔥 **Fonctionnalités Complètes :**
+    
+    #### **4 Coefficients de Friction + Analyse de Trace :**
+    1. **🔥 μ Cinétique** : Friction directe grain-sphère (`F_résistance / F_normale`)
+    2. **🎯 μ Rolling** : Résistance pure au roulement (`μ_cinétique - tan(angle)`)
+    3. **⚡ μ Énergétique** : Basé sur dissipation d'énergie (`E_dissipée / (F_normale × distance)`)
+    4. **📊 Krr Référence** : Coefficient traditionnel de résistance au roulement
+    5. **🛤️ Analyse de Trace Complète** : δ/R, volume, régime de pénétration, validation théorique
+    
+    #### **🛤️ Nouvelles Métriques de Trace :**
+    - **🎯 Ratio δ/R** : Pénétration normalisée (comparaison littérature)
+    - **📦 Volume de trace** : Déformation totale du substrat
+    - **⚖️ Rapport densités** : ρs/ρg (paramètre fondamental)
+    - **🏷️ Classification régime** : No-plowing / Micro-plowing / Deep-plowing
+    - **📊 Validation théorique** : Écart aux prédictions Darbois Texier et al.
+    - **⚡ Énergie de déformation** : Travail de pénétration + déformation substrat
+    
+    #### **📈 Graphiques Automatiques Enrichis :**
+    - **🔥 Coefficients vs Temps** : Évolution temporelle complète
+    - **🛤️ Comparaison δ/R vs Théorie** : Validation avec littérature
+    - **📐 Profil de trace** : Visualisation morphologique 3D
+    - **⚡ Énergies combinées** : Cinétique + déformation substrat
+    - **🔗 Corrélations avancées** : Relations friction-pénétration
+    
+    #### **🔍 Analyses Multi-Expériences Avancées :**
+    - **💧 Effet Humidité** : Sur friction ET pénétration
+    - **📐 Effet Angle** : Influence sur tous les paramètres
+    - **🏷️ Distribution régimes** : Classification automatique
+    - **📊 Matrices corrélation** : Relations inter-paramètres
+    - **🎯 Insights automatiques** : Détection patterns physiques
+    
+    ### 📋 **Protocole Expérimental Intégré :**
+    
+    #### **Pendant l'expérience :**
+    1. **📂 Enregistrement vidéo** à 250 fps
+    2. **🎯 Détection sphère** avec marqueurs colorés
+    3. **📏 Calibration automatique** depuis rayon détecté
+    
+    #### **Immédiatement après l'expérience :**
+    4. **📏 Mesure trace** (URGENT avant effacement !) :
+       - Profondeur maximale (mm)
+       - Largeur moyenne (3 points)
+       - Longueur totale visible
+    
+    #### **Analyse complète :**
+    5. **📊 Upload fichier CSV** + paramètres expérimentation
+    6. **🛤️ Saisie mesures trace** dans l'interface
+    7. **🔬 Analyses automatiques** : friction + pénétration + validation
+    
+    ### 💡 **Pour votre fichier `20D_0W_3.csv` :**
+    
+    - **📂 Upload fichier** : Détection automatique angle 20°
+    - **💧 Humidité** : 0% (sols secs)
+    - **🛤️ Mesures trace** : Profondeur ~1-3mm, largeur ~10-20mm
+    - **📊 Résultats attendus** :
+      - μ cinétique ~0.2-0.4
+      - δ/R ~0.03-0.08 (no-plowing)
+      - Validation théorique <25% écart
+      - Krr ~0.04-0.08
+    
+    ### 🎯 **Résultats Automatiques Complets :**
+    
+    ✅ **Dashboard friction** : 4 cartes coefficients  
+    ✅ **Dashboard trace** : δ/R, volume, régime, validation  
+    ✅ **Graphiques temporels** : Évolution tous paramètres  
+    ✅ **Comparaison théorie** : Darbois Texier, Van Wal validations  
+    ✅ **Analyse énergétique** : Cinétique + déformation combinées  
+    ✅ **Export complet** : CSV détaillé + rapport scientifique  
+    
+    ### 🔬 **Innovation Scientifique :**
+    
+    **Premier système au monde** combinant :
+    - Analyse friction temporelle grain-sphère 4 coefficients
+    - Validation théorique traces δ/R vs littérature  
+    - Effet humidité sur friction ET pénétration
+    - Classification automatique régimes Van Wal
+    - Énergies dissipation complètes (cinétique + déformation)
+    
+    **Applications directes pour votre recherche Osaka University !** 🎓
+    """)
+
+# Footer enrichi
+st.markdown("---")
+st.markdown("""
+<div style="text-align: center; color: #666; padding: 1rem;">
+    🎓 <strong>Analyseur Complet Friction + Trace Grain-Sphère</strong><br>
+    <em>🔥 Premier système intégrant friction temporelle ET analyse de pénétration</em><br>
+    📧 Département des Sciences de la Terre Cosmique - Université d'Osaka<br>
+    🔬 <strong>Fonctionnalités :</strong> 4 coefficients friction + analyse trace δ/R + validation théorique + énergies combinées
 </div>
 """, unsafe_allow_html=True)
