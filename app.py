@@ -355,12 +355,27 @@ col1, col2, col3 = st.columns(3)
 
 with col1:
     if st.button("🧪 Test Sec (0% eau, 5°)"):
+        # Tests rapides avec métriques avancées
         np.random.seed(42)
         test_metrics = {
             'krr': 0.055 + np.random.normal(0, 0.005),
             'v0': 180 + np.random.normal(0, 20),
             'distance': 250 + np.random.normal(0, 30),
-            'calibration': 1.33
+            'calibration': 1.33,
+            'mu_effective': 0.142,
+            'mu_kinetic': 0.089,
+            'energy_efficiency': 45.2,
+            'power_avg_mW': 2.8,
+            'power_max_mW': 5.1,
+            'deceleration_rate': 0.234,
+            'trajectory_linearity': 94.7,
+            'vertical_deviation_mm': 2.1,
+            'velocity_cv': 12.3,
+            'decel_ratio': 1.05,
+            'F_resistance_avg_mN': 2.45,
+            'F_resistance_max_mN': 4.21,
+            'E_dissipated_mJ': 15.7,
+            'physics_valid': True
         }
         st.session_state.experiments['Test_Sec_0%'] = {
             'name': 'Test_Sec_0%',
@@ -380,7 +395,21 @@ with col2:
             'krr': 0.072 + np.random.normal(0, 0.005),
             'v0': 160 + np.random.normal(0, 15),
             'distance': 220 + np.random.normal(0, 25),
-            'calibration': 1.33
+            'calibration': 1.33,
+            'mu_effective': 0.339,
+            'mu_kinetic': 0.094,
+            'energy_efficiency': 38.9,
+            'power_avg_mW': 3.2,
+            'power_max_mW': 5.8,
+            'deceleration_rate': 0.267,
+            'trajectory_linearity': 91.2,
+            'vertical_deviation_mm': 3.4,
+            'velocity_cv': 15.7,
+            'decel_ratio': 0.98,
+            'F_resistance_avg_mN': 2.78,
+            'F_resistance_max_mN': 4.67,
+            'E_dissipated_mJ': 18.3,
+            'physics_valid': True
         }
         st.session_state.experiments['Test_Humide_10%'] = {
             'name': 'Test_Humide_10%',
@@ -400,7 +429,21 @@ with col3:
             'krr': 0.063 + np.random.normal(0, 0.006),
             'v0': 220 + np.random.normal(0, 25),
             'distance': 280 + np.random.normal(0, 35),
-            'calibration': 1.33
+            'calibration': 1.33,
+            'mu_effective': 0.641,
+            'mu_kinetic': 0.087,
+            'energy_efficiency': 42.1,
+            'power_avg_mW': 4.1,
+            'power_max_mW': 7.2,
+            'deceleration_rate': 0.198,
+            'trajectory_linearity': 88.9,
+            'vertical_deviation_mm': 4.2,
+            'velocity_cv': 18.2,
+            'decel_ratio': 0.92,
+            'F_resistance_avg_mN': 3.12,
+            'F_resistance_max_mN': 5.83,
+            'E_dissipated_mJ': 22.1,
+            'physics_valid': True
         }
         st.session_state.experiments['Test_Angle_30°'] = {
             'name': 'Test_Angle_30°',
@@ -415,7 +458,7 @@ with col3:
 
 # ==================== TABLEAU RÉSULTATS ====================
 if st.session_state.experiments:
-    st.markdown("## 📋 Tableau de Comparaison")
+    st.markdown("## 📋 Tableau de Comparaison Avancé")
     
     results = []
     for name, exp in st.session_state.experiments.items():
@@ -426,13 +469,68 @@ if st.session_state.experiments:
             'Angle (°)': exp['angle'],
             'Type': exp['sphere_type'],
             'Krr': f"{metrics['krr']:.6f}",
-            'V₀ (mm/s)': f"{metrics['v0']:.1f}",
-            'Distance (mm)': f"{metrics['distance']:.1f}",
-            'Succès (%)': f"{exp['success_rate']:.1f}"
+            'μ Effectif': f"{metrics.get('mu_effective', 0):.4f}",
+            'μ Cinétique': f"{metrics.get('mu_kinetic', 0):.4f}",
+            'Efficacité (%)': f"{metrics.get('energy_efficiency', 0):.1f}",
+            'Puissance Moy (mW)': f"{metrics.get('power_avg_mW', 0):.2f}",
+            'Force Rés. Moy (mN)': f"{metrics.get('F_resistance_avg_mN', 0):.2f}",
+            'Décélération (m/s²)': f"{metrics.get('deceleration_rate', 0):.3f}",
+            'Qualité Traj (%)': f"{metrics.get('trajectory_linearity', 0):.1f}",
+            'Énergie Dissipée (mJ)': f"{metrics.get('E_dissipated_mJ', 0):.2f}",
+            'CV Vitesse (%)': f"{metrics.get('velocity_cv', 0):.1f}",
+            'Validation': '✅' if metrics.get('physics_valid', False) else '⚠️'
         })
     
     results_df = pd.DataFrame(results)
     st.dataframe(results_df, use_container_width=True)
+    
+    # === MÉTRIQUES AVANCÉES PAR EXPÉRIENCE ===
+    st.markdown("### 🔬 Analyse Détaillée par Expérience")
+    
+    for name, exp in st.session_state.experiments.items():
+        with st.expander(f"📊 Détails : {name}"):
+            metrics = exp['metrics']
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.markdown("**🔋 Énergies et Puissances**")
+                st.metric("Énergie Initiale", f"{metrics.get('E_initial_mJ', 0):.2f} mJ")
+                st.metric("Énergie Finale", f"{metrics.get('E_final_mJ', 0):.2f} mJ")
+                st.metric("Énergie Dissipée", f"{metrics.get('E_dissipated_mJ', 0):.2f} mJ")
+                st.metric("Puissance Moyenne", f"{metrics.get('power_avg_mW', 0):.2f} mW")
+                st.metric("Puissance Maximum", f"{metrics.get('power_max_mW', 0):.2f} mW")
+            
+            with col2:
+                st.markdown("**⚡ Forces et Décélération**")
+                st.metric("Force Résistance Moy.", f"{metrics.get('F_resistance_avg_mN', 0):.2f} mN")
+                st.metric("Force Résistance Max", f"{metrics.get('F_resistance_max_mN', 0):.2f} mN")
+                st.metric("Décélération Mesurée", f"{metrics.get('deceleration_rate', 0):.3f} m/s²")
+                st.metric("Décélération Théorique", f"{metrics.get('theoretical_decel', 0):.3f} m/s²")
+                st.metric("Ratio Décel.", f"{metrics.get('decel_ratio', 0):.2f}")
+            
+            with col3:
+                st.markdown("**🎯 Qualité et Validation**")
+                st.metric("Linéarité Trajectoire", f"{metrics.get('trajectory_linearity', 0):.1f}%")
+                st.metric("Déviation Verticale", f"{metrics.get('vertical_deviation_mm', 0):.2f} mm")
+                st.metric("CV Vitesse", f"{metrics.get('velocity_cv', 0):.1f}%")
+                
+                # Status de validation
+                if metrics.get('physics_valid', False):
+                    st.success("✅ Physique Validée")
+                else:
+                    st.warning("⚠️ À Vérifier")
+                    
+                # Critères de qualité
+                if metrics.get('velocity_cv', 100) < 20:
+                    st.success("✅ Vitesse Stable")
+                else:
+                    st.warning("⚠️ Vitesse Variable")
+                    
+                if metrics.get('trajectory_linearity', 0) > 85:
+                    st.success("✅ Trajectoire Linéaire")
+                else:
+                    st.warning("⚠️ Trajectoire Courbée")
 
 # ==================== GRAPHIQUES ====================
 if st.session_state.experiments:
