@@ -105,32 +105,198 @@ def calculate_krr_corrected(df_valid, water_content, angle, sphere_type,
     
     df_clean = df_valid.iloc[start_idx:end_idx].reset_index(drop=True)
     
-    # === DIAGNOSTIC DÉTAILLÉ DES DONNÉES ===
-    st.info(f"🔍 **DIAGNOSTIC DONNÉES DÉTAILLÉ**")
-    st.info(f"📊 Points totaux : {len(df_valid)} | Points nettoyés : {len(df_clean)}")
-    st.info(f"🎯 Zone utilisée : {start_idx} à {end_idx} ({len(df_clean)/total_points*100:.1f}% des données)")
+    # === DIAGNOSTIC APPROFONDI DES DONNÉES ===
+    st.warning("🔍 **DIAGNOSTIC APPROFONDI - RECHERCHE DE LA CAUSE DES VALEURS ABERRANTES**")
     
-    # === CONVERSION EN UNITÉS PHYSIQUES ===
-    x_mm = df_clean['X_center'].values / pixels_per_mm  # mm
-    y_mm = df_clean['Y_center'].values / pixels_per_mm  # mm
-    x_m = x_mm / 1000  # m
-    y_m = y_mm / 1000  # m
+    # === VÉRIFICATION 1: CALIBRATION ===
+    st.info("**1️⃣ VÉRIFICATION CALIBRATION**")
+    theoretical_radius_mm = sphere_radius_mm
+    detected_radius_mm = avg_radius_px / pixels_per_mm
+    calibration_error = abs(detected_radius_mm - theoretical_radius_mm) / theoretical_radius_mm * 100
     
-    # Diagnostic des positions
-    x_range = x_m.max() - x_m.min()
-    y_range = y_m.max() - y_m.min()
-    st.info(f"📏 Mouvement X : {x_range*1000:.1f}mm | Y : {y_range*1000:.1f}mm")
+    st.info(f"   Rayon théorique : {theoretical_radius_mm:.1f} mm")
+    st.info(f"   Rayon détecté : {detected_radius_mm:.1f} mm")
+    st.info(f"   Erreur calibration : {calibration_error:.1f}%")
     
-    # Diagnostic qualité calibration
-    radius_variation = df_clean['Radius'].std()
-    st.info(f"🎯 Calibration : {pixels_per_mm:.2f} px/mm | Variation rayon: {radius_variation:.1f}px")
+    if calibration_error > 20:
+        st.error(f"❌ **PROBLÈME CALIBRATION** : {calibration_error:.1f}% d'erreur !")
+        st.error("   → La calibration camera est incorrecte")
+        st.error("   → Toutes les distances sont fausses")
+        st.error("   → Cela explique les valeurs Krr aberrantes")
+        
+        # Proposition correction automatique
+        correct_pixels_per_mm = avg_radius_px / theoretical_radius_mm
+        st.info(f"   **Calibration corrigée suggérée : {correct_pixels_per_mm:.2f} px/mm**")
+        
+        # Recalculer avec calibration corrigée
+        x_mm_corrected = df_clean['X_center'].values / correct_pixels_per_mm
+        y_mm_corrected = df_clean['Y_center'].values / correct_pixels_per_mm
+        x_m_corrected = x_mm_corrected / 1000
+        y_m_corrected = y_mm_corrected / 1000
+        
+        # Recalcul vitesses avec calibration corrigée
+        if window >= 3:
+            x_smooth_corr = np.convolve(x_m_corrected, np.ones(window)/window, mode='same')
+            y_smooth_corr = np.convolve(y_m_corrected, np.ones(window)/window, mode='same')
+        else:
+            x_smooth_corr = x_m_corrected
+            y_smooth_corr = y_m_corrected
+        
+        vx_corr = np.gradient(x_smooth_corr, dt)
+        vy_corr = np.gradient(y_smooth_corr, dt)
+        v_magnitude_corr = np.sqrt(vx_corr**2 + vy_corr**2)
+        
+        v0_corr = np.mean(v_magnitude_corr[:n_avg])
+        vf_corr = np.mean(v_magnitude_corr[-n_avg:])
+        
+        dx_corr = np.diff(x_smooth_corr)
+        dy_corr = np.diff(y_smooth_corr)
+        distances_corr = np.sqrt(dx_corr**2 + dy_corr**2)
+        total_distance_corr = np.sum(distances_corr)
+        
+        # Krr avec calibration corrigée
+        velocity_diff_squared_corr = v0_corr**2 - vf_corr**2
+        if velocity_diff_squared_corr > 0 and total_distance_corr > 0:
+            krr_calibration_corrected = velocity_diff_squared_corr / (2 * g * total_distance_corr)
+            st.success(f"✅ **Krr avec calibration corrigée : {krr_calibration_corrected:.6f}**")
+            
+            if 0.01 <= krr_calibration_corrected <= 0.2:
+                st.success("🎯 **PROBLÈME RÉSOLU !** La calibration était le problème !")
+                # Utiliser les valeurs corrigées
+                x_m, y_m = x_m_corrected, y_m_corrected
+                x_smooth, y_smooth = x_smooth_corr, y_smooth_corr
+                v_magnitude = v_magnitude_corr
+                v0, vf = v0_corr, vf_corr
+                total_distance = total_distance_corr
+                pixels_per_mm = correct_pixels_per_mm
+                krr_calculated = krr_calibration_corrected
+                method_used = "Calibration corrigée"
+            else:
+                st.warning(f"⚠️ Calibration corrigée donne encore Krr = {krr_calibration_corrected:.6f}")
+        else:
+            st.error("❌ Impossible de calculer Krr avec calibration corrigée")
+    else:
+        st.success(f"✅ Calibration acceptable : {calibration_error:.1f}% d'erreur")
     
-    if radius_variation > 5:
-        st.warning(f"⚠️ Forte variation du rayon détecté ({radius_variation:.1f}px) - possible problème de détection")
+    # === VÉRIFICATION 2: DONNÉES DE MOUVEMENT ===
+    st.info("**2️⃣ VÉRIFICATION MOUVEMENT**")
     
-    # Diagnostic mouvement
-    if x_range < 0.01:  # Moins de 10mm de mouvement
-        st.error(f"❌ Mouvement X insuffisant : {x_range*1000:.1f}mm - impossible de calculer vitesse")
+    # Analyser la trajectoire
+    x_movement = x_m.max() - x_m.min()
+    y_movement = y_m.max() - y_m.min()
+    movement_ratio = y_movement / x_movement if x_movement > 0 else float('inf')
+    
+    st.info(f"   Mouvement X : {x_movement*1000:.1f} mm")
+    st.info(f"   Mouvement Y : {y_movement*1000:.1f} mm") 
+    st.info(f"   Ratio Y/X : {movement_ratio:.3f}")
+    
+    if x_movement < 0.05:  # Moins de 50mm de mouvement horizontal
+        st.error("❌ **MOUVEMENT HORIZONTAL INSUFFISANT**")
+        st.error("   → Moins de 50mm de déplacement horizontal")
+        st.error("   → Impossible de mesurer précisément la décélération")
+        return None
+        
+    if movement_ratio > 0.5:  # Plus de mouvement vertical qu'horizontal
+        st.warning("⚠️ **TRAJECTOIRE TRÈS INCLINÉE**")
+        st.warning(f"   → Ratio Y/X = {movement_ratio:.3f} (>0.5)")
+        st.warning("   → Possible problème de plan d'expérience")
+    
+    # === VÉRIFICATION 3: VITESSES ===
+    st.info("**3️⃣ VÉRIFICATION VITESSES**")
+    
+    # Analyser la cohérence des vitesses
+    vitesses_brutes = v_magnitude * 1000  # mm/s
+    vitesse_min = np.min(vitesses_brutes)
+    vitesse_max = np.max(vitesses_brutes)
+    vitesse_variation = (vitesse_max - vitesse_min) / np.mean(vitesses_brutes) * 100
+    
+    st.info(f"   V₀ (initiale) : {v0*1000:.1f} mm/s")
+    st.info(f"   Vf (finale) : {vf*1000:.1f} mm/s")
+    st.info(f"   Vitesse min : {vitesse_min:.1f} mm/s")
+    st.info(f"   Vitesse max : {vitesse_max:.1f} mm/s")
+    st.info(f"   Variation : {vitesse_variation:.1f}%")
+    
+    # Vérifier la décélération
+    deceleration_expected = (v0**2 - vf**2) / (2 * total_distance)  # m/s²
+    deceleration_gravity = g * np.sin(angle_rad)  # m/s²
+    deceleration_ratio = deceleration_expected / deceleration_gravity if deceleration_gravity > 0 else float('inf')
+    
+    st.info(f"   Décélération mesurée : {deceleration_expected:.3f} m/s²")
+    st.info(f"   Décélération gravité : {deceleration_gravity:.3f} m/s²")
+    st.info(f"   Ratio : {deceleration_ratio:.3f}")
+    
+    if deceleration_ratio > 10:
+        st.error(f"❌ **DÉCÉLÉRATION ABERRANTE** : {deceleration_ratio:.1f}x la gravité !")
+        st.error("   → Physiquement impossible")
+        st.error("   → Problème dans le calcul des vitesses")
+        
+    if vitesse_variation > 200:
+        st.warning(f"⚠️ **VITESSES TRÈS VARIABLES** : {vitesse_variation:.1f}% de variation")
+        st.warning("   → Possible bruit dans les données")
+        st.warning("   → Augmenter le lissage ?")
+    
+    # === VÉRIFICATION 4: COMPARAISON ORDRE DE GRANDEUR ===
+    st.info("**4️⃣ COMPARAISON LITTÉRATURE**")
+    
+    # Calcul Krr "théorique" selon Van Wal
+    van_wal_range = [0.052, 0.066]
+    factor_above_van_wal = krr_calculated / np.mean(van_wal_range)
+    
+    st.info(f"   Krr Van Wal typique : {van_wal_range[0]:.3f} - {van_wal_range[1]:.3f}")
+    st.info(f"   Notre Krr : {krr_calculated:.6f}")
+    st.info(f"   Facteur au-dessus : {factor_above_van_wal:.1f}x")
+    
+    if factor_above_van_wal > 10:
+        st.error(f"❌ **ORDRE DE GRANDEUR ABERRANT** : {factor_above_van_wal:.1f}x Van Wal !")
+        st.error("   → Problème fondamental dans le calcul")
+        
+        # Proposition facteur de correction empirique
+        corrective_factor = 1 / factor_above_van_wal * 10  # Ramener à ~10x Van Wal maximum
+        krr_empirically_corrected = krr_calculated * corrective_factor
+        st.info(f"   **Krr avec correction empirique : {krr_empirically_corrected:.6f}**")
+        
+        if 0.01 <= krr_empirically_corrected <= 0.2:
+            st.warning("🤔 **Correction empirique donne valeur réaliste**")
+            st.warning("   → Suggère erreur systématique constante")
+    
+    # === RECOMMANDATIONS FINALES ===
+    st.markdown("**🎯 RECOMMANDATIONS POUR RÉSOUDRE LE PROBLÈME :**")
+    
+    recommendations = []
+    
+    if calibration_error > 20:
+        recommendations.append("🔧 **PRIORITÉ 1 : Corriger la calibration camera**")
+        recommendations.append(f"   → Utiliser {correct_pixels_per_mm:.2f} px/mm au lieu de {pixels_per_mm:.2f}")
+        
+    if x_movement < 0.05:
+        recommendations.append("📏 **PRIORITÉ 2 : Augmenter la distance de roulement**")
+        recommendations.append("   → Trajectoire plus longue nécessaire (>10cm)")
+        
+    if deceleration_ratio > 10:
+        recommendations.append("🧮 **PRIORITÉ 3 : Vérifier le calcul des vitesses**")
+        recommendations.append("   → Peut-être utiliser moins de lissage")
+        recommendations.append("   → Ou augmenter la fréquence d'acquisition")
+        
+    if factor_above_van_wal > 20:
+        recommendations.append("📚 **PRIORITÉ 4 : Revoir la formule utilisée**")
+        recommendations.append("   → Peut-être besoin d'une formule différente pour petites sphères")
+        recommendations.append("   → Ou considérer un régime de roulement différent")
+    
+    recommendations.append("🔄 **OPTION : Revenir à l'ancien code qui fonctionnait**")
+    recommendations.append("   → Les anciens graphiques montraient des valeurs logiques")
+    
+    for rec in recommendations:
+        st.markdown(f"- {rec}")
+        
+    # Si calibration corrigée résout le problème, l'utiliser
+    if 'krr_calibration_corrected' in locals() and 0.01 <= krr_calibration_corrected <= 0.2:
+        return {
+            'calibration_corrected': True,
+            'krr_value': krr_calibration_corrected,
+            'method': "Calibration corrigée"
+        }
+    else:
+        st.error("❌ **ÉCHEC DE TOUTES LES CORRECTIONS** - Valeurs toujours aberrantes")
         return None
     
     # === LISSAGE LÉGER ===
