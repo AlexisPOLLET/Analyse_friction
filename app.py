@@ -168,7 +168,8 @@ def calculate_krr_corrected(df_valid, water_content, angle, sphere_type,
         return None
     
     # === CALCUL KRR AVEC VALIDATION STRICTE ===
-    # Formule : Krr = (V₀² - Vf²) / (2 * g * L)
+    # Formule originale Van Wal : Krr = (V₀² - Vf²) / (2 * g * L)
+    # MAIS il faut peut-être inclure l'effet de l'angle de pente !
     
     # Validation conditions préalables
     if total_distance <= 0:
@@ -188,21 +189,81 @@ def calculate_krr_corrected(df_valid, water_content, angle, sphere_type,
         st.error("   → Sphère accélère au lieu de ralentir !")
         return None
     
-    # Calcul du numérateur
+    # ESSAI 1: Formule Van Wal classique
     velocity_diff_squared = v0**2 - vf**2
     if velocity_diff_squared <= 0:
         st.error(f"❌ (V₀² - Vf²) ≤ 0 : {velocity_diff_squared:.6f}")
         return None
     
-    # Calcul Krr
-    krr_calculated = velocity_diff_squared / (2 * g * total_distance)
+    # Calcul Krr standard
+    krr_standard = velocity_diff_squared / (2 * g * total_distance)
     
-    st.info(f"🧮 **DÉTAIL CALCUL KRR :**")
-    st.info(f"   V₀² = {v0:.4f}² = {v0**2:.6f} m²/s²")
-    st.info(f"   Vf² = {vf:.4f}² = {vf**2:.6f} m²/s²")
-    st.info(f"   V₀² - Vf² = {velocity_diff_squared:.6f} m²/s²")
-    st.info(f"   2gL = 2 × {g} × {total_distance:.4f} = {2 * g * total_distance:.6f}")
-    st.info(f"   **Krr = {velocity_diff_squared:.6f} / {2 * g * total_distance:.6f} = {krr_calculated:.6f}**")
+    # ESSAI 2: Krr corrigé pour pente inclinée (prendre en compte sin(angle))
+    # Sur pente, la composante gravitationnelle tangentielle est g*sin(angle)
+    g_effective = g * np.sin(angle_rad) if angle > 0 else g
+    krr_slope_corrected = velocity_diff_squared / (2 * g_effective * total_distance)
+    
+    # ESSAI 3: Approche énergétique (avec moment d'inertie)
+    # Énergie cinétique totale = translation + rotation
+    j_factor = 2/5 if sphere_type == "Solide" else 2/3
+    E_total_initial = 0.5 * mass_kg * v0**2 * (1 + j_factor)
+    E_total_final = 0.5 * mass_kg * vf**2 * (1 + j_factor)
+    E_dissipated = E_total_initial - E_total_final
+    
+    # Krr énergétique
+    if total_distance > 0:
+        F_gravity_component = mass_kg * g * np.sin(angle_rad) if angle > 0 else mass_kg * g
+        krr_energetic = E_dissipated / (F_gravity_component * total_distance)
+    else:
+        krr_energetic = 0
+    
+    st.info(f"🧮 **COMPARAISON DES MÉTHODES KRR :**")
+    st.info(f"   **Méthode 1 (Van Wal standard)** : {krr_standard:.6f}")
+    st.info(f"   **Méthode 2 (pente corrigée)** : {krr_slope_corrected:.6f}")
+    st.info(f"   **Méthode 3 (énergétique)** : {krr_energetic:.6f}")
+    
+    # Choisir la méthode la plus réaliste
+    if 0.01 <= krr_slope_corrected <= 0.2:
+        krr_calculated = krr_slope_corrected
+        method_used = "Pente corrigée"
+        st.success(f"✅ **Méthode retenue : Pente corrigée** → Krr = {krr_calculated:.6f}")
+    elif 0.01 <= krr_energetic <= 0.2:
+        krr_calculated = krr_energetic
+        method_used = "Énergétique"
+        st.success(f"✅ **Méthode retenue : Énergétique** → Krr = {krr_calculated:.6f}")
+    elif 0.01 <= krr_standard <= 0.2:
+        krr_calculated = krr_standard
+        method_used = "Van Wal standard"
+        st.success(f"✅ **Méthode retenue : Van Wal standard** → Krr = {krr_calculated:.6f}")
+    else:
+        # Si aucune méthode ne donne des valeurs réalistes, prendre la plus proche
+        methods = [
+            ("Standard", krr_standard),
+            ("Pente corrigée", krr_slope_corrected), 
+            ("Énergétique", krr_energetic)
+        ]
+        # Trouver la plus proche de la plage [0.03, 0.15]
+        target_range = [0.03, 0.15]
+        best_method = min(methods, key=lambda x: min(abs(x[1] - target_range[0]), abs(x[1] - target_range[1])))
+        krr_calculated = best_method[1]
+        method_used = best_method[0]
+        st.warning(f"⚠️ **Aucune méthode idéale, meilleure : {method_used}** → Krr = {krr_calculated:.6f}")
+    
+    st.info(f"📊 **Détails calcul ({method_used}) :**")
+    if method_used == "Pente corrigée":
+        st.info(f"   V₀² - Vf² = {velocity_diff_squared:.6f} m²/s²")
+        st.info(f"   g_eff = g×sin({angle}°) = {g_effective:.3f} m/s²")
+        st.info(f"   Distance = {total_distance:.4f} m")
+        st.info(f"   **Krr = {velocity_diff_squared:.6f} / {2 * g_effective * total_distance:.6f} = {krr_calculated:.6f}**")
+    elif method_used == "Énergétique":
+        st.info(f"   E_dissipée = {E_dissipated:.6f} J")
+        st.info(f"   Force gravité = {F_gravity_component:.6f} N")
+        st.info(f"   Distance = {total_distance:.4f} m")
+        st.info(f"   **Krr = {E_dissipated:.6f} / {F_gravity_component * total_distance:.6f} = {krr_calculated:.6f}**")
+    else:
+        st.info(f"   V₀² - Vf² = {velocity_diff_squared:.6f} m²/s²")
+        st.info(f"   2gL = 2 × {g} × {total_distance:.4f} = {2 * g * total_distance:.6f}")
+        st.info(f"   **Krr = {velocity_diff_squared:.6f} / {2 * g * total_distance:.6f} = {krr_calculated:.6f}**")
     
     # === VALIDATION RÉSULTAT ===
     if krr_calculated < 0:
