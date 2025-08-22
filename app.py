@@ -594,7 +594,7 @@ st.markdown("""
 ### ✅ Interface Simple Fonctionnelle
 - Calcul Krr basique sans complications
 - Formule : Krr = (V₀² - Vf²) / (2gL)
-- Graphiques simples
-- Pas de bugs !
+- Graphiques complets avec comparaisons
+- Courbes de tendance automatiques
+- Références Van Wal intégrées
 """)
-
