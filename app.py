@@ -182,13 +182,15 @@ def calculate_complete_metrics(df_valid, water_content, angle, sphere_type,
     
     if total_distance > 0 and v0 > vf:
         krr_global = (v0**2 - vf**2) / (2 * g * total_distance)
-        krr_global = min(krr_global, 1.0)  # Plafonnement physique
+        # Supprimer le plafonnement artificiel - laisser la valeur réelle
+        # krr_global = min(krr_global, 1.0)  # ← Cette ligne causait le problème !
     else:
         krr_global = None
     
-    # Krr instantané
+    # Krr instantané sans plafonnement artificiel
     krr_instantaneous = np.abs(a_tangential) / g
-    krr_instantaneous = np.clip(krr_instantaneous, 0, 1.0)
+    # Garder seulement un plafonnement de sécurité très haut
+    krr_instantaneous = np.clip(krr_instantaneous, 0, 10.0)  # Plafond élargi
     
     # === COEFFICIENTS DE FRICTION AVEC SUPPRESSION PICS ===
     # Éliminer les valeurs aberrantes avant calcul des moyennes
@@ -1312,10 +1314,12 @@ if st.session_state.experiments_data:
                 st.write(f"**Krr :** {krr_val:.6f}")
                 if 0.03 <= krr_val <= 0.15:
                     st.success("✅ Valeur normale")
-                elif krr_val > 1.0:
-                    st.error("⚠️ Valeur aberrante")
+                elif krr_val > 2.0:
+                    st.error("⚠️ Valeur très élevée - vérifiez calibration")
+                elif krr_val > 0.5:
+                    st.warning("⚠️ Valeur élevée")
                 else:
-                    st.warning("⚠️ Valeur inhabituelle")
+                    st.info("📊 Valeur calculée")
             else:
                 st.error("❌ Krr non calculé")
 else:
