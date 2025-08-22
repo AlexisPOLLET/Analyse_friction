@@ -696,7 +696,7 @@ with st.expander("➕ Ajouter une nouvelle expérience", expanded=True):
         
         except Exception as e:
             st.error(f"❌ Erreur lecture fichier : {str(e)}")
-            return
+            st.stop()  # Arrêter l'exécution proprement
         
         # CALCUL AVEC CALIBRATION CORRIGÉE
         exp_data = load_experiment_data(uploaded_file, exp_name, water_content, angle, sphere_type)
