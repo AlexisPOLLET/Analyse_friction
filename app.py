@@ -261,32 +261,59 @@ def load_experiment_data(uploaded_file, experiment_name, water_content, angle, s
     """Chargement complet avec tous les calculs"""
     if uploaded_file is not None:
         try:
-            df = pd.read_csv(uploaded_file)
+            # Lecture plus robuste du CSV
+            uploaded_file.seek(0)  # Remettre le curseur au début
+            df = pd.read_csv(uploaded_file, sep=',')
+            
+            # Vérifier si le DataFrame est vide
+            if df.empty:
+                st.error("❌ Fichier CSV vide")
+                return None
+            
+            # Afficher les colonnes détectées pour diagnostic
+            st.info(f"📊 Colonnes détectées : {list(df.columns)}")
             
             required_columns = ['Frame', 'X_center', 'Y_center', 'Radius']
-            if not all(col in df.columns for col in required_columns):
-                st.error(f"❌ Colonnes requises: {required_columns}")
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            
+            if missing_columns:
+                st.error(f"❌ Colonnes manquantes: {missing_columns}")
+                st.error(f"📊 Colonnes trouvées: {list(df.columns)}")
+                
+                # Essayer de détecter des colonnes similaires
+                for req_col in missing_columns:
+                    similar_cols = [col for col in df.columns if req_col.lower() in col.lower()]
+                    if similar_cols:
+                        st.info(f"💡 Colonnes similaires à '{req_col}': {similar_cols}")
+                
                 return None
             
             df_valid = df[(df['X_center'] != 0) & (df['Y_center'] != 0) & (df['Radius'] != 0)]
             
             if len(df_valid) < 10:
-                st.error("❌ Pas assez de détections valides")
+                st.error(f"❌ Pas assez de détections valides: {len(df_valid)}/{len(df)}")
                 return None
             
-            # Détection auto de l'angle
+            # Détection auto de l'angle depuis le nom du fichier
             filename = uploaded_file.name
             if 'D' in filename:
                 try:
                     angle_auto = float(filename.split('D')[0])
                     if 5 <= angle_auto <= 45:
                         angle = angle_auto
-                        st.info(f"🎯 Angle détecté: {angle}°")
+                        st.info(f"🎯 Angle détecté depuis nom fichier: {angle}°")
                 except:
                     pass
             
-            # Calcul complet
-            metrics = calculate_complete_metrics(df_valid, water_content, angle, sphere_type)
+            # Calcul complet avec paramètres par défaut si nécessaire
+            sphere_mass_g = 10.0  # Forcer valeur réaliste
+            sphere_radius_mm = 15.0  # Forcer valeur réaliste
+            
+            metrics = calculate_complete_metrics(
+                df_valid, water_content, angle, sphere_type,
+                sphere_mass_g=sphere_mass_g, 
+                sphere_radius_mm=sphere_radius_mm
+            )
             
             if metrics is None:
                 st.error("❌ Échec du calcul des métriques")
@@ -302,8 +329,17 @@ def load_experiment_data(uploaded_file, experiment_name, water_content, angle, s
                 'metrics': metrics,
                 'success_rate': len(df_valid) / len(df) * 100
             }
+            
+        except pd.errors.EmptyDataError:
+            st.error("❌ Fichier CSV vide ou invalide")
+            return None
+        except pd.errors.ParserError as e:
+            st.error(f"❌ Erreur de parsing CSV: {str(e)}")
+            st.info("💡 Vérifiez le format CSV (séparateurs, encodage)")
+            return None
         except Exception as e:
-            st.error(f"❌ Erreur: {str(e)}")
+            st.error(f"❌ Erreur inattendue: {str(e)}")
+            st.info("💡 Vérifiez que le fichier est bien un CSV valide")
             return None
     return None
 
