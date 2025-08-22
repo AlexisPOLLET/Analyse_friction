@@ -45,16 +45,19 @@ st.markdown("""
 if 'experiments' not in st.session_state:
     st.session_state.experiments = {}
 
-# ==================== FONCTION CALCUL KRR ====================
-def calculate_krr_simple(df_valid, fps=250, sphere_mass_g=10.0, sphere_radius_mm=15.0, angle_deg=15.0):
-    """Calcul Krr simple et fonctionnel"""
+# ==================== FONCTION CALCUL KRR AVANCÉ ====================
+def calculate_krr_advanced(df_valid, fps=250, sphere_mass_g=10.0, sphere_radius_mm=15.0, angle_deg=15.0):
+    """Calcul Krr avec métriques physiques avancées"""
     
     if len(df_valid) < 20:
         return None
     
-    # Paramètres
+    # Paramètres physiques
     dt = 1/fps
     g = 9.81
+    mass_kg = sphere_mass_g / 1000
+    radius_m = sphere_radius_mm / 1000
+    angle_rad = np.radians(angle_deg)
     
     # Calibration
     avg_radius_px = df_valid['Radius'].mean()
@@ -64,42 +67,146 @@ def calculate_krr_simple(df_valid, fps=250, sphere_mass_g=10.0, sphere_radius_mm
     x_m = df_valid['X_center'].values / pixels_per_mm / 1000
     y_m = df_valid['Y_center'].values / pixels_per_mm / 1000
     
+    # Temps
+    t = np.arange(len(df_valid)) * dt
+    
     # Vitesses
     vx = np.gradient(x_m, dt)
     vy = np.gradient(y_m, dt)
     v_magnitude = np.sqrt(vx**2 + vy**2)
     
-    # Vitesses moyennées
-    n = len(v_magnitude) // 4
+    # Accélérations
+    ax = np.gradient(vx, dt)
+    ay = np.gradient(vy, dt)
+    acceleration = np.gradient(v_magnitude, dt)
+    
+    # Vitesses moyennées (plus robuste)
+    n = max(5, len(v_magnitude) // 6)  # Moyenner sur plus de points
     v0 = np.mean(v_magnitude[:n])
     vf = np.mean(v_magnitude[-n:])
     
     # Distance
     distance = np.sum(np.sqrt(np.diff(x_m)**2 + np.diff(y_m)**2))
     
-    # Krr
+    # === MÉTRIQUES PHYSIQUES AVANCÉES ===
+    
+    # 1. Krr basique
     if v0 > vf and distance > 0:
         krr = (v0**2 - vf**2) / (2 * g * distance)
     else:
         krr = 0
     
+    # 2. Coefficient de friction effectif
+    mu_effective = krr + np.tan(angle_rad)
+    
+    # 3. Forces
+    F_gravity_tangential = mass_kg * g * np.sin(angle_rad)
+    F_resistance = mass_kg * np.abs(acceleration)
+    F_resistance_avg = np.mean(F_resistance)
+    F_resistance_max = np.max(F_resistance)
+    
+    # 4. Énergies (translation + rotation)
+    j_factor = 2/5  # Sphère solide
+    E_translational = 0.5 * mass_kg * v_magnitude**2
+    E_rotational = 0.5 * (j_factor * mass_kg * radius_m**2) * (v_magnitude / radius_m)**2
+    E_total = E_translational + E_rotational
+    
+    E_initial = E_total[0] if len(E_total) > 0 else 0
+    E_final = E_total[-1] if len(E_total) > 0 else 0
+    E_dissipated = E_initial - E_final
+    
+    # 5. Efficacité énergétique
+    energy_efficiency = (E_final / E_initial * 100) if E_initial > 0 else 0
+    
+    # 6. Puissance dissipée
+    power_dissipated = F_resistance * v_magnitude  # Watts
+    power_avg = np.mean(power_dissipated) * 1000  # mW
+    power_max = np.max(power_dissipated) * 1000   # mW
+    
+    # 7. Vitesse de décélération
+    if len(v_magnitude) > 10:
+        # Ajustement linéaire pour la décélération
+        try:
+            decel_fit = np.polyfit(t, v_magnitude, 1)
+            deceleration_rate = -decel_fit[0]  # m/s²
+        except:
+            deceleration_rate = (v0 - vf) / (t[-1] - t[0]) if len(t) > 1 else 0
+    else:
+        deceleration_rate = 0
+    
+    # 8. Qualité de la trajectoire (linéarité)
+    if distance > 0:
+        straight_distance = np.sqrt((x_m[-1] - x_m[0])**2 + (y_m[-1] - y_m[0])**2)
+        trajectory_linearity = (straight_distance / distance * 100)  # %
+        
+        # Variation verticale (déviation de la ligne droite)
+        vertical_deviation = np.std(y_m) * 1000  # mm
+    else:
+        trajectory_linearity = 0
+        vertical_deviation = 0
+    
+    # 9. Validation physique
+    # Test indépendance vitesse (coefficient de variation des vitesses)
+    velocity_cv = (np.std(v_magnitude) / np.mean(v_magnitude) * 100) if np.mean(v_magnitude) > 0 else 0
+    
+    # Test cohérence décélération
+    theoretical_decel = g * (np.sin(angle_rad) + krr * np.cos(angle_rad))
+    decel_ratio = deceleration_rate / theoretical_decel if theoretical_decel > 0 else 0
+    
+    # 10. Coefficient de friction cinétique
+    F_normal = mass_kg * g * np.cos(angle_rad)
+    mu_kinetic = F_resistance_avg / F_normal if F_normal > 0 else 0
+    
     return {
+        # Métriques de base
         'krr': krr,
         'v0': v0 * 1000,
         'vf': vf * 1000,
         'distance': distance * 1000,
-        'calibration': pixels_per_mm
+        'calibration': pixels_per_mm,
+        
+        # Métriques physiques avancées
+        'mu_effective': mu_effective,
+        'mu_kinetic': mu_kinetic,
+        'energy_efficiency': energy_efficiency,
+        'power_avg_mW': power_avg,
+        'power_max_mW': power_max,
+        'deceleration_rate': deceleration_rate,
+        'trajectory_linearity': trajectory_linearity,
+        'vertical_deviation_mm': vertical_deviation,
+        'velocity_cv': velocity_cv,
+        'decel_ratio': decel_ratio,
+        
+        # Forces et énergies
+        'F_resistance_avg_mN': F_resistance_avg * 1000,
+        'F_resistance_max_mN': F_resistance_max * 1000,
+        'E_initial_mJ': E_initial * 1000,
+        'E_final_mJ': E_final * 1000,
+        'E_dissipated_mJ': E_dissipated * 1000,
+        
+        # Validation
+        'theoretical_decel': theoretical_decel,
+        'physics_valid': 0.7 <= decel_ratio <= 1.3 and velocity_cv < 30,  # Critères de validité
+        
+        # Données pour graphiques avancés
+        'time_series': {
+            'time': t,
+            'velocity': v_magnitude * 1000,
+            'acceleration': acceleration,
+            'power': power_dissipated * 1000,
+            'energy_total': E_total * 1000
+        }
     }
 
 # ==================== CHARGEMENT DONNÉES ====================
-def load_data_simple(uploaded_file, exp_name, water_content, angle, sphere_type):
-    """Chargement simple des données"""
+def load_data_advanced(uploaded_file, exp_name, water_content, angle, sphere_type):
+    """Chargement avec calculs avancés"""
     if uploaded_file is not None:
         try:
             df = pd.read_csv(uploaded_file)
             df_valid = df[(df['X_center'] != 0) & (df['Y_center'] != 0) & (df['Radius'] != 0)]
             
-            metrics = calculate_krr_simple(df_valid, angle_deg=angle)
+            metrics = calculate_krr_advanced(df_valid, angle_deg=angle)
             if metrics is None:
                 return None
                 
@@ -136,7 +243,7 @@ if st.button("🚀 Analyser et Ajouter à la Comparaison") and uploaded_file is 
     if exp_name in st.session_state.experiments:
         st.warning(f"⚠️ Expérience '{exp_name}' existe déjà. Changez le nom ou elle sera remplacée.")
     
-    exp_data = load_data_simple(uploaded_file, exp_name, water_content, angle, sphere_type)
+    exp_data = load_data_advanced(uploaded_file, exp_name, water_content, angle, sphere_type)
     
     if exp_data:
         # AJOUTER (pas remplacer) l'expérience
@@ -147,45 +254,75 @@ if st.button("🚀 Analyser et Ajouter à la Comparaison") and uploaded_file is 
         st.info(f"📊 Total expériences: {len(st.session_state.experiments)}")
         
         # Affichage résultats de la nouvelle expérience
+        st.markdown("#### 📊 Résultats de l'Expérience")
+        
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
             krr_val = metrics['krr']
             status = "✅ NORMAL" if 0.03 <= krr_val <= 0.15 else "⚠️ ÉLEVÉ"
+            physics_status = "🔬 VALIDE" if metrics.get('physics_valid', False) else "⚠️ À VÉRIFIER"
             st.markdown(f"""
             <div class="metric-card">
                 <h3>Krr</h3>
                 <h2>{krr_val:.6f}</h2>
                 <p>{status}</p>
+                <p><small>{physics_status}</small></p>
             </div>
             """, unsafe_allow_html=True)
         
         with col2:
+            mu_eff = metrics.get('mu_effective', 0)
             st.markdown(f"""
             <div class="metric-card">
-                <h3>V₀</h3>
-                <h2>{metrics['v0']:.1f} mm/s</h2>
-                <p>Vitesse initiale</p>
+                <h3>μ Effectif</h3>
+                <h2>{mu_eff:.4f}</h2>
+                <p>Krr + tan(θ)</p>
             </div>
             """, unsafe_allow_html=True)
             
         with col3:
+            energy_eff = metrics.get('energy_efficiency', 0)
+            eff_status = "🟢 EFFICACE" if energy_eff > 50 else "🟡 MOYEN" if energy_eff > 20 else "🔴 DISSIPÉ"
             st.markdown(f"""
             <div class="metric-card">
-                <h3>Distance</h3>
-                <h2>{metrics['distance']:.1f} mm</h2>
-                <p>Distance parcourue</p>
+                <h3>Efficacité Énergétique</h3>
+                <h2>{energy_eff:.1f}%</h2>
+                <p>{eff_status}</p>
             </div>
             """, unsafe_allow_html=True)
             
         with col4:
+            traj_qual = metrics.get('trajectory_linearity', 0)
+            qual_status = "🎯 LINÉAIRE" if traj_qual > 90 else "📐 COURBÉE"
             st.markdown(f"""
             <div class="metric-card">
-                <h3>Calibration</h3>
-                <h2>{metrics['calibration']:.2f} px/mm</h2>
-                <p>Pixels par mm</p>
+                <h3>Qualité Trajectoire</h3>
+                <h2>{traj_qual:.1f}%</h2>
+                <p>{qual_status}</p>
             </div>
             """, unsafe_allow_html=True)
+        
+        # Métriques physiques détaillées
+        st.markdown("#### 🔬 Métriques Physiques Avancées")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Puissance Moyenne", f"{metrics.get('power_avg_mW', 0):.2f} mW")
+            st.metric("Force Résistance Moy.", f"{metrics.get('F_resistance_avg_mN', 0):.2f} mN")
+        
+        with col2:
+            st.metric("Décélération", f"{metrics.get('deceleration_rate', 0):.3f} m/s²")
+            st.metric("Ratio Théorique", f"{metrics.get('decel_ratio', 0):.2f}")
+        
+        with col3:
+            st.metric("μ Cinétique", f"{metrics.get('mu_kinetic', 0):.4f}")
+            st.metric("Énergie Dissipée", f"{metrics.get('E_dissipated_mJ', 0):.2f} mJ")
+        
+        with col4:
+            st.metric("Variation Vitesse (CV)", f"{metrics.get('velocity_cv', 0):.1f}%")
+            st.metric("Déviation Verticale", f"{metrics.get('vertical_deviation_mm', 0):.2f} mm")
         
         st.rerun()
 
@@ -195,13 +332,17 @@ if st.session_state.experiments:
     
     exp_summary = []
     for name, exp in st.session_state.experiments.items():
+        metrics = exp['metrics']
         exp_summary.append({
             'Nom': name,
             'Eau (%)': exp['water_content'],
             'Angle (°)': exp['angle'],
             'Type': exp['sphere_type'],
-            'Krr': f"{exp['metrics']['krr']:.6f}",
-            'Status': '✅' if 0.03 <= exp['metrics']['krr'] <= 0.15 else '⚠️'
+            'Krr': f"{metrics['krr']:.6f}",
+            'μ Effectif': f"{metrics.get('mu_effective', 0):.4f}",
+            'Efficacité (%)': f"{metrics.get('energy_efficiency', 0):.1f}",
+            'Qualité Traj (%)': f"{metrics.get('trajectory_linearity', 0):.1f}",
+            'Physique': '✅' if metrics.get('physics_valid', False) else '⚠️'
         })
     
     summary_df = pd.DataFrame(exp_summary)
