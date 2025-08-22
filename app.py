@@ -1,4 +1,502 @@
-import streamlit as st
+summary_df = pd.DataFrame(exp_summary)
+    st.dataframe(summary_df, use_container_width=True)
+    
+    # === SECTION GRAPHIQUES COMPLÈTE ===
+    st.markdown("---")
+    st.markdown("## 📊 Analyse Graphique Complète")
+    
+    # Préparer les données pour tous les graphiques
+    plot_data = []
+    for name, data in st.session_state.experiments_data.items():
+        metrics = data.get('metrics', {})
+        plot_data.append({
+            'Expérience': name,
+            'Humidité (%)': data.get('water_content', 0),
+            'Angle (°)': data.get('angle', 15),
+            'Krr': metrics.get('Krr', 0),
+            'μ_effectif': metrics.get('mu_effective', 0),
+            'μ_cinétique': metrics.get('mu_kinetic', 0),
+            'μ_roulement': metrics.get('mu_rolling', 0),
+            'μ_énergétique': metrics.get('mu_energetic', 0),
+            'V0': metrics.get('v0_mms', 0),
+            'Distance': metrics.get('total_distance_mm', 0)
+        })
+    
+    if len(plot_data) >= 2:
+        plot_df = pd.DataFrame(plot_data)
+        
+        # === GRAPHIQUES COEFFICIENTS DE FRICTION VS HUMIDITÉ ===
+        st.markdown("### 💧 Coefficients de Friction vs Teneur en Eau")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Tous les coefficients vs humidité
+            fig_friction_humidity = go.Figure()
+            
+            fig_friction_humidity.add_trace(go.Scatter(
+                x=plot_df['Humidité (%)'], y=plot_df['Krr'],
+                mode='markers+lines', name='Krr',
+                line=dict(color='blue', width=3), marker=dict(size=8)
+            ))
+            
+            fig_friction_humidity.add_trace(go.Scatter(
+                x=plot_df['Humidité (%)'], y=plot_df['μ_cinétique'],
+                mode='markers+lines', name='μ cinétique',
+                line=dict(color='red', width=3), marker=dict(size=8)
+            ))
+            
+            fig_friction_humidity.add_trace(go.Scatter(
+                x=plot_df['Humidité (%)'], y=plot_df['μ_roulement'],
+                mode='markers+lines', name='μ roulement',
+                line=dict(color='green', width=3), marker=dict(size=8)
+            ))
+            
+            fig_friction_humidity.add_trace(go.Scatter(
+                x=plot_df['Humidité (%)'], y=plot_df['μ_énergétique'],
+                mode='markers+lines', name='μ énergétique',
+                line=dict(color='orange', width=3), marker=dict(size=8)
+            ))
+            
+            fig_friction_humidity.update_layout(
+                title="🔥 Tous les Coefficients vs Humidité",
+                xaxis_title="Teneur en Eau (%)",
+                yaxis_title="Coefficient de Friction",
+                height=500
+            )
+            
+            st.plotly_chart(fig_friction_humidity, use_container_width=True)
+        
+        with col2:
+            # μ effectif vs humidité (graphique séparé)
+            fig_mu_eff_humidity = px.scatter(
+                plot_df,
+                x='Humidité (%)',
+                y='μ_effectif',
+                color='Angle (°)',
+                size=[20]*len(plot_df),
+                hover_data=['Expérience'],
+                title="⚙️ μ Effectif vs Humidité",
+                labels={'μ_effectif': 'μ Effectif'}
+            )
+            
+            # Ajouter ligne de tendance
+            if len(plot_df) >= 3:
+                try:
+                    z = np.polyfit(plot_df['Humidité (%)'], plot_df['μ_effectif'], 1)
+                    p = np.poly1d(z)
+                    x_line = np.linspace(plot_df['Humidité (%)'].min(), plot_df['Humidité (%)'].max(), 100)
+                    fig_mu_eff_humidity.add_trace(go.Scatter(
+                        x=x_line, y=p(x_line), mode='lines', name='Tendance',
+                        line=dict(dash='dash', color='red', width=2)
+                    ))
+                except:
+                    pass
+            
+            st.plotly_chart(fig_mu_eff_humidity, use_container_width=True)
+        
+        # === GRAPHIQUES COEFFICIENTS DE FRICTION VS ANGLE ===
+        st.markdown("### 📐 Coefficients de Friction vs Angle d'Inclinaison")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Tous les coefficients vs angle
+            fig_friction_angle = go.Figure()
+            
+            fig_friction_angle.add_trace(go.Scatter(
+                x=plot_df['Angle (°)'], y=plot_df['Krr'],
+                mode='markers+lines', name='Krr',
+                line=dict(color='blue', width=3), marker=dict(size=8)
+            ))
+            
+            fig_friction_angle.add_trace(go.Scatter(
+                x=plot_df['Angle (°)'], y=plot_df['μ_cinétique'],
+                mode='markers+lines', name='μ cinétique',
+                line=dict(color='red', width=3), marker=dict(size=8)
+            ))
+            
+            fig_friction_angle.add_trace(go.Scatter(
+                x=plot_df['Angle (°)'], y=plot_df['μ_roulement'],
+                mode='markers+lines', name='μ roulement',
+                line=dict(color='green', width=3), marker=dict(size=8)
+            ))
+            
+            fig_friction_angle.add_trace(go.Scatter(
+                x=plot_df['Angle (°)'], y=plot_df['μ_énergétique'],
+                mode='markers+lines', name='μ énergétique',
+                line=dict(color='orange', width=3), marker=dict(size=8)
+            ))
+            
+            fig_friction_angle.update_layout(
+                title="🔥 Tous les Coefficients vs Angle",
+                xaxis_title="Angle d'Inclinaison (°)",
+                yaxis_title="Coefficient de Friction",
+                height=500
+            )
+            
+            st.plotly_chart(fig_friction_angle, use_container_width=True)
+        
+        with col2:
+            # Krr vs angle (style scatter plot)
+            fig_krr_angle = px.scatter(
+                plot_df,
+                x='Angle (°)',
+                y='Krr',
+                color='Humidité (%)',
+                size=[20]*len(plot_df),
+                hover_data=['Expérience'],
+                title="📊 Krr vs Angle d'Inclinaison",
+                labels={'Krr': 'Coefficient Krr'}
+            )
+            
+            # Ajouter ligne de tendance
+            if len(plot_df) >= 3:
+                try:
+                    z = np.polyfit(plot_df['Angle (°)'], plot_df['Krr'], 1)
+                    p = np.poly1d(z)
+                    x_line = np.linspace(plot_df['Angle (°)'].min(), plot_df['Angle (°)'].max(), 100)
+                    fig_krr_angle.add_trace(go.Scatter(
+                        x=x_line, y=p(x_line), mode='lines', name='Tendance',
+                        line=dict(dash='dash', color='red', width=2)
+                    ))
+                except:
+                    pass
+            
+            st.plotly_chart(fig_krr_angle, use_container_width=True)
+        
+        # === GRAPHIQUE KRR VS HUMIDITÉ (AMÉLIORÉ) ===
+        st.markdown("### 💧 Krr vs Teneur en Eau (Graphique Principal)")
+        
+        fig_krr_humidity = px.scatter(
+            plot_df,
+            x='Humidité (%)',
+            y='Krr',
+            color='Angle (°)',
+            size='V0',  # Taille basée sur vitesse initiale
+            hover_data=['Expérience', 'Distance'],
+            title="💧 Coefficient Krr vs Teneur en Eau (Valeurs Corrigées)",
+            labels={'Krr': 'Coefficient Krr', 'V0': 'Vitesse V₀ (mm/s)'}
+        )
+        
+        # Ajouter lignes de référence Van Wal
+        fig_krr_humidity.add_hline(y=0.052, line_dash="dash", line_color="red", 
+                                  annotation_text="Van Wal (dry): 0.052")
+        fig_krr_humidity.add_hline(y=0.066, line_dash="dash", line_color="red", 
+                                  annotation_text="Van Wal (dry): 0.066")
+        
+        # Ajouter ligne de tendance si assez de points
+        if len(plot_df) >= 3:
+            try:
+                z = np.polyfit(plot_df['Humidité (%)'], plot_df['Krr'], 2)  # Polynôme degré 2
+                p = np.poly1d(z)
+                x_line = np.linspace(plot_df['Humidité (%)'].min(), plot_df['Humidité (%)'].max(), 100)
+                fig_krr_humidity.add_trace(go.Scatter(
+                    x=x_line, y=p(x_line), mode='lines', name='Tendance Quadratique',
+                    line=dict(dash='dot', color='purple', width=3)
+                ))
+            except:
+                pass
+        
+        st.plotly_chart(fig_krr_humidity, use_container_width=True)
+        
+        # === GRAPHIQUE KRR VS ANGLE (NOUVEAU) ===
+        st.markdown("### 📐 Krr vs Angle d'Inclinaison (Graphique Principal)")
+        
+        fig_krr_angle_main = px.scatter(
+            plot_df,
+            x='Angle (°)',
+            y='Krr',
+            color='Humidité (%)',
+            size='Distance',  # Taille basée sur distance
+            hover_data=['Expérience', 'V0'],
+            title="📐 Coefficient Krr vs Angle d'Inclinaison",
+            labels={'Krr': 'Coefficient Krr', 'Distance': 'Distance (mm)'}
+        )
+        
+        # Ajouter ligne de tendance
+        if len(plot_df) >= 3:
+            try:
+                z = np.polyfit(plot_df['Angle (°)'], plot_df['Krr'], 1)
+                p = np.poly1d(z)
+                x_line = np.linspace(plot_df['Angle (°)'].min(), plot_df['Angle (°)'].max(), 100)
+                fig_krr_angle_main.add_trace(go.Scatter(
+                    x=x_line, y=p(x_line), mode='lines', name='Tendance Linéaire',
+                    line=dict(dash='dash', color='orange', width=3)
+                ))
+            except:
+                pass
+        
+        st.plotly_chart(fig_krr_angle_main, use_container_width=True)
+        
+        # === ANALYSE AUTOMATIQUE DES CORRÉLATIONS ===
+        st.markdown("### 🔍 Analyse Automatique des Corrélations")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.markdown("#### 💧 Effet Humidité")
+            if len(plot_df) >= 3:
+                corr_humid_krr = plot_df[['Humidité (%)', 'Krr']].corr().iloc[0, 1]
+                corr_humid_mu_cin = plot_df[['Humidité (%)', 'μ_cinétique']].corr().iloc[0, 1]
+                corr_humid_mu_eff = plot_df[['Humidité (%)', 'μ_effectif']].corr().iloc[0, 1]
+                
+                st.metric("Humidité ↔ Krr", f"{corr_humid_krr:.3f}")
+                st.metric("Humidité ↔ μ cinétique", f"{corr_humid_mu_cin:.3f}")
+                st.metric("Humidité ↔ μ effectif", f"{corr_humid_mu_eff:.3f}")
+        
+        with col2:
+            st.markdown("#### 📐 Effet Angle")
+            if len(plot_df) >= 3:
+                corr_angle_krr = plot_df[['Angle (°)', 'Krr']].corr().iloc[0, 1]
+                corr_angle_mu_cin = plot_df[['Angle (°)', 'μ_cinétique']].corr().iloc[0, 1]
+                corr_angle_mu_eff = plot_df[['Angle (°)', 'μ_effectif']].corr().iloc[0, 1]
+                
+                st.metric("Angle ↔ Krr", f"{corr_angle_krr:.3f}")
+                st.metric("Angle ↔ μ cinétique", f"{corr_angle_mu_cin:.3f}")
+                st.metric("Angle ↔ μ effectif", f"{corr_angle_mu_eff:.3f}")
+        
+        with col3:
+            st.markdown("#### 🎯 Interprétation")
+            if len(plot_df) >= 3:
+                # Analyse automatique
+                humid_effect = "Positif" if corr_humid_krr > 0.3 else "Négatif" if corr_humid_krr < -0.3 else "Faible"
+                angle_effect = "Positif" if corr_angle_krr > 0.3 else "Négatif" if corr_angle_krr < -0.3 else "Faible"
+                
+                st.write(f"**Effet Humidité:** {humid_effect}")
+                st.write(f"**Effet Angle:** {angle_effect}")
+                
+                if corr_humid_krr > 0.5:
+                    st.success("✅ Forte cohésion capillaire")
+                elif corr_humid_krr < -0.3:
+                    st.info("📊 Effect lubrifiation")
+                
+                if abs(corr_angle_krr) > 0.7:
+                    st.warning("⚠️ Forte dépendance à l'angle")
+    
+    else:
+        st.info("Ajoutez au moins 2 expériences pour voir les graphiques de comparaison")
+    
+    # === GRAPHIQUE COMPARATIF EN BARRES ===
+    if len(plot_data) >= 2:
+        st.markdown("### 📊 Comparaison Visuelle des Coefficients")
+        
+        # Créer graphique en barres groupées
+        fig_comparison = go.Figure()
+        
+        x_labels = [f"{row['Expérience']}\n({row['Humidité (%)']}% eau, {row['Angle (°)']}°)" for _, row in plot_df.iterrows()]
+        
+        fig_comparison.add_trace(go.Bar(
+            x=x_labels, y=plot_df['Krr'],
+            name='Krr', marker_color='blue',
+            text=[f"{val:.4f}" for val in plot_df['Krr']],
+            textposition='auto'
+        ))
+        
+        fig_comparison.add_trace(go.Bar(
+            x=x_labels, y=plot_df['μ_cinétique'],
+            name='μ cinétique', marker_color='red',
+            text=[f"{val:.4f}" for val in plot_df['μ_cinétique']],
+            textposition='auto'
+        ))
+        
+        fig_comparison.add_trace(go.Bar(
+            x=x_labels, y=plot_df['μ_énergétique'],
+            name='μ énergétique', marker_color='orange',
+            text=[f"{val:.4f}" for val in plot_df['μ_énergétique']],
+            textposition='auto'
+        ))
+        
+        fig_comparison.update_layout(
+            title="📊 Comparaison de Tous les Coefficients par Expérience",
+            xaxis_title="Expériences",
+            yaxis_title="Valeur du Coefficient",
+            barmode='group',
+            height=600,
+            xaxis_tickangle=-45
+        )
+        
+        st.plotly_chart(fig_comparison, use_container_width=True)
+        
+        # === MATRICE DE CORRÉLATION AVANCÉE ===
+        st.markdown("### 🔗 Matrice de Corrélation Complète")
+        
+        # Sélectionner les colonnes numériques pour la corrélation
+        correlation_cols = ['Humidité (%)', 'Angle (°)', 'Krr', 'μ_effectif', 'μ_cinétique', 
+                           'μ_roulement', 'μ_énergétique', 'V0', 'Distance']
+        
+        corr_data = plot_df[correlation_cols]
+        
+        if len(corr_data) >= 3:
+            corr_matrix = corr_data.corr()
+            
+            fig_corr = px.imshow(
+                corr_matrix,
+                text_auto=True,
+                aspect="auto",
+                title="🔗 Matrice de Corrélation - Tous les Paramètres",
+                color_continuous_scale="RdBu_r",
+                zmin=-1, zmax=1
+            )
+            fig_corr.update_layout(height=600)
+            st.plotly_chart(fig_corr, use_container_width=True)
+            
+            # Top corrélations
+            st.markdown("#### 🎯 Top 5 Corrélations les Plus Fortes")
+            
+            # Extraire corrélations (exclure diagonale)
+            mask = np.triu(np.ones_like(corr_matrix, dtype=bool), k=1)
+            corr_values = corr_matrix.where(mask).stack().reset_index()
+            corr_values.columns = ['Variable1', 'Variable2', 'Corrélation']
+            corr_values = corr_values.sort_values('Corrélation', key=abs, ascending=False)
+            
+            for i, row in corr_values.head(5).iterrows():
+                strength = "Très forte" if abs(row['Corrélation']) > 0.8 else "Forte" if abs(row['Corrélation']) > 0.6 else "Modérée" if abs(row['Corrélation']) > 0.4 else "Faible"
+                direction = "positive" if row['Corrélation'] > 0 else "négative"
+                
+                # Couleur selon la force
+                if abs(row['Corrélation']) > 0.7:
+                    color = "🔴"
+                elif abs(row['Corrélation']) > 0.5:
+                    color = "🟠"
+                else:
+                    color = "🟡"
+                
+                st.markdown(f"{color} **{strength} corrélation {direction}** : {row['Variable1']} ↔ {row['Variable2']} (r = {row['Corrélation']:.3f})")
+        
+        # === INSIGHTS PHYSIQUES AUTOMATIQUES ===
+        st.markdown("### 🧠 Insights Physiques Automatiques")
+        
+        insights = []
+        
+        # Analyse effet humidité sur Krr
+        if len(plot_df) >= 3:
+            humid_krr_corr = plot_df[['Humidité (%)', 'Krr']].corr().iloc[0, 1]
+            if humid_krr_corr > 0.5:
+                insights.append("💧 **Cohésion capillaire confirmée** : L'humidité augmente la résistance au roulement (bridges capillaires)")
+            elif humid_krr_corr < -0.3:
+                insights.append("💧 **Effet de lubrification** : L'humidité réduit la résistance (films d'eau lubrifiants)")
+            else:
+                insights.append("💧 **Effet d'humidité complexe** : Possiblement non-linéaire (optimum à identifier)")
+        
+        # Analyse effet angle
+        if len(plot_df) >= 3:
+            angle_krr_corr = plot_df[['Angle (°)', 'Krr']].corr().iloc[0, 1]
+            if abs(angle_krr_corr) > 0.6:
+                if angle_krr_corr > 0:
+                    insights.append("📐 **Krr augmente avec l'angle** : Déformation accrue du substrat à forte pente")
+                else:
+                    insights.append("📐 **Krr diminue avec l'angle** : Possiblement effet de vitesse ou pénétration")
+            else:
+                insights.append("📐 **Krr indépendant de l'angle** : Conforme théorie Van Wal (régime no-plowing)")
+        
+        # Analyse cohérence μ cinétique vs Krr
+        if len(plot_df) >= 3:
+            mu_krr_corr = plot_df[['μ_cinétique', 'Krr']].corr().iloc[0, 1]
+            if mu_krr_corr > 0.7:
+                insights.append("🔗 **Cohérence μ cinétique - Krr** : Mécanismes de friction cohérents")
+            else:
+                insights.append("⚠️ **Divergence μ cinétique - Krr** : Mécanismes de friction différents")
+        
+        # Analyse vitesse vs résistance
+        if len(plot_df) >= 3:
+            v0_krr_corr = plot_df[['V0', 'Krr']].corr().iloc[0, 1]
+            if abs(v0_krr_corr) < 0.3:
+                insights.append("✅ **Indépendance vitesse-Krr** : Conforme à la théorie Van Wal")
+            else:
+                insights.append("⚠️ **Dépendance vitesse-Krr** : Possible transition de régime")
+        
+        # Recherche de l'humidité optimale
+        if len(plot_df) >= 4:
+            max_krr_idx = plot_df['Krr'].idxmax()
+            optimal_humidity = plot_df.loc[max_krr_idx, 'Humidité (%)']
+            if 8 <= optimal_humidity <= 15:
+                insights.append(f"🎯 **Humidité optimale détectée** : {optimal_humidity}% (cohésion capillaire maximale)")
+        
+        if insights:
+            for insight in insights:
+                st.markdown(insight)
+        else:
+            st.info("Ajoutez plus d'expériences variées pour des insights physiques automatiques")
+    
+    # === RECOMMANDATIONS EXPÉRIMENTALES ===
+    if len(plot_data) >= 2:
+        st.markdown("### 💡 Recommandations Expérimentales")
+        
+        recommendations = []
+        
+        # Analyser la couverture des paramètres
+        humidity_range = plot_df['Humidité (%)'].max() - plot_df['Humidité (%)'].min()
+        angle_range = plot_df['Angle (°)'].max() - plot_df['Angle (°)'].min()
+        
+        if humidity_range < 10:
+            recommendations.append("💧 **Élargir gamme d'humidité** : Tester 0%, 5%, 10%, 15%, 20% pour identifier l'optimum")
+        
+        if angle_range < 15:
+            recommendations.append("📐 **Varier les angles** : Tester 10°, 15°, 20°, 30° pour valider l'indépendance de Krr")
+        
+        # Analyser les gaps dans les données
+        humidity_values = sorted(plot_df['Humidité (%)'].unique())
+        angle_values = sorted(plot_df['Angle (°)'].unique())
+        
+        if len(humidity_values) >= 2:
+            humidity_gaps = [humidity_values[i+1] - humidity_values[i] for i in range(len(humidity_values)-1)]
+            max_gap = max(humidity_gaps)
+            if max_gap > 7:
+                recommendations.append(f"💧 **Combler gap d'humidité** : Ajouter points entre {humidity_values[humidity_gaps.index(max_gap)]}% et {humidity_values[humidity_gaps.index(max_gap)+1]}%")
+        
+        # Recommandations spécifiques selon les résultats
+        if len(plot_df) >= 3:
+            krr_variation = (plot_df['Krr'].max() - plot_df['Krr'].min()) / plot_df['Krr'].mean()
+            if krr_variation > 0.3:
+                recommendations.append("📊 **Forte variation Krr détectée** : Répéter expériences pour confirmer la reproductibilité")
+            
+            if plot_df['Krr'].max() > 0.1:
+                recommendations.append("⚠️ **Krr élevé détecté** : Vérifier calibration et conditions expérimentales")
+        
+        if recommendations:
+            for rec in recommendations:
+                st.markdown(f"- {rec}")
+        else:
+                            st.success("✅ **Plan expérimental bien équilibré** : Couverture paramétrique satisfaisante")
+    
+    # === EXPORT COMPLET ===
+    st.markdown("### 📥 Export Données Complètes")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        # Export tableau principal
+        csv_main = summary_df.to_csv(index=False)
+        st.download_button(
+            label="📋 Export Tableau Principal",
+            data=csv_main,
+            file_name="tableau_coefficients_friction.csv",
+            mime="text/csv"
+        )
+    
+    with col2:
+        # Export données pour graphiques
+        if len(plot_data) >= 2:
+            plot_export_df = pd.DataFrame(plot_data)
+            csv_plots = plot_export_df.to_csv(index=False)
+            st.download_button(
+                label="📊 Export Données Graphiques",
+                data=csv_plots,
+                file_name="donnees_graphiques_friction.csv",
+                mime="text/csv"
+            )
+    
+    with col3:
+        # Export corrélations
+        if len(plot_data) >= 3:
+            csv_corr = corr_matrix.to_csv()
+            st.download_button(
+                label="🔗 Export Matrice Corrélations",
+                data=csv_corr,
+                file_name="matrice_correlations.csv",
+                mime="text/csv"
+            )import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
@@ -187,6 +685,23 @@ def calculate_krr_corrected(df_valid, water_content, angle, sphere_type,
     # Coefficient de friction effectif
     mu_eff = krr_final + np.tan(angle_rad)
     
+    # === CALCUL COEFFICIENTS DE FRICTION SUPPLÉMENTAIRES ===
+    # Coefficient de friction cinétique (basé sur accélération)
+    F_gravity_normal = mass_kg * g * np.cos(angle_rad)
+    F_gravity_tangential = mass_kg * g * np.sin(angle_rad)
+    F_resistance_avg = mass_kg * np.mean(np.abs(acceleration))
+    
+    mu_kinetic = F_resistance_avg / F_gravity_normal if F_gravity_normal > 0 else 0
+    
+    # Coefficient de friction de roulement (différent de Krr)
+    mu_rolling = krr_final  # Approximation première
+    
+    # Coefficient de friction énergétique
+    if total_distance > 0 and E_initial > E_final:
+        mu_energetic = (E_initial - E_final) / (F_gravity_normal * total_distance)
+    else:
+        mu_energetic = 0
+    
     # === DIAGNOSTIC FINAL ===
     st.success(f"✅ **KRR FINAL : {krr_final:.6f}**")
     
@@ -201,6 +716,9 @@ def calculate_krr_corrected(df_valid, water_content, angle, sphere_type,
         # Métriques principales
         'Krr': krr_final,
         'mu_effective': mu_eff,
+        'mu_kinetic': mu_kinetic,
+        'mu_rolling': mu_rolling,
+        'mu_energetic': mu_energetic,
         'v0_ms': v0,
         'vf_ms': vf,
         'v0_mms': v0 * 1000,
@@ -382,6 +900,9 @@ with col1:
         test_metrics = {
             'Krr': 0.052,  # Valeur Van Wal
             'mu_effective': 0.226,  # 0.052 + tan(10°)
+            'mu_kinetic': 0.015,
+            'mu_rolling': 0.052,
+            'mu_energetic': 0.038,
             'v0_mms': 145.3,
             'vf_mms': 89.7,
             'max_velocity_mms': 156.2,
@@ -406,6 +927,9 @@ with col2:
         test_metrics = {
             'Krr': 0.063,  # Augmentation réaliste avec humidité
             'mu_effective': 0.331,
+            'mu_kinetic': 0.018,
+            'mu_rolling': 0.063,
+            'mu_energetic': 0.045,
             'v0_mms': 167.8,
             'vf_mms': 95.4,
             'max_velocity_mms': 178.3,
@@ -430,6 +954,9 @@ with col3:
         test_metrics = {
             'Krr': 0.074,  # Maximum réaliste avec humidité optimale
             'mu_effective': 0.438,
+            'mu_kinetic': 0.022,
+            'mu_rolling': 0.074,
+            'mu_energetic': 0.051,
             'v0_mms': 189.2,
             'vf_mms': 108.6,
             'max_velocity_mms': 198.7,
@@ -463,6 +990,9 @@ if st.session_state.experiments_data:
             'Angle (°)': data.get('angle', 15),
             'Krr': f"{metrics.get('Krr', 0):.6f}",
             'μ effectif': f"{metrics.get('mu_effective', 0):.4f}",
+            'μ cinétique': f"{metrics.get('mu_kinetic', 0):.4f}",
+            'μ roulement': f"{metrics.get('mu_rolling', 0):.4f}",
+            'μ énergétique': f"{metrics.get('mu_energetic', 0):.4f}",
             'V₀ (mm/s)': f"{metrics.get('v0_mms', 0):.1f}",
             'Distance (mm)': f"{metrics.get('total_distance_mm', 0):.1f}",
             'Efficacité (%)': f"{metrics.get('energy_efficiency_percent', 0):.1f}",
