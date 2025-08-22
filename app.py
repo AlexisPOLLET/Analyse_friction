@@ -167,6 +167,11 @@ def calculate_krr_corrected(df_valid, water_content, angle, sphere_type,
     
     st.info(f"📏 Distance totale : {total_distance*1000:.1f} mm")
     
+    # Vérification distance après calcul
+    if total_distance < 0.005:  # Moins de 5mm
+        st.error(f"❌ Distance totale insuffisante : {total_distance*1000:.1f}mm")
+        return None
+    
     # === CALCUL KRR AVEC VALIDATION STRICTE ===
     # Formule : Krr = (V₀² - Vf²) / (2 * g * L)
     
