@@ -140,15 +140,19 @@ if st.button("🚀 Analyser Simple") and uploaded_file is not None:
         st.session_state.experiments[exp_name] = exp_data
         metrics = exp_data['metrics']
         
+        st.success(f"✅ Expérience '{exp_name}' ajoutée avec succès!")
+        
         # Affichage résultats
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
             krr_val = metrics['krr']
+            status = "✅ NORMAL" if 0.03 <= krr_val <= 0.15 else "⚠️ ÉLEVÉ" if krr_val > 0.15 else "📊 FAIBLE"
             st.markdown(f"""
             <div class="metric-card">
                 <h3>Krr</h3>
                 <h2>{krr_val:.6f}</h2>
+                <p>{status}</p>
             </div>
             """, unsafe_allow_html=True)
         
@@ -157,6 +161,7 @@ if st.button("🚀 Analyser Simple") and uploaded_file is not None:
             <div class="metric-card">
                 <h3>V₀</h3>
                 <h2>{metrics['v0']:.1f} mm/s</h2>
+                <p>Vitesse initiale</p>
             </div>
             """, unsafe_allow_html=True)
             
@@ -165,6 +170,7 @@ if st.button("🚀 Analyser Simple") and uploaded_file is not None:
             <div class="metric-card">
                 <h3>Distance</h3>
                 <h2>{metrics['distance']:.1f} mm</h2>
+                <p>Distance parcourue</p>
             </div>
             """, unsafe_allow_html=True)
             
@@ -173,8 +179,77 @@ if st.button("🚀 Analyser Simple") and uploaded_file is not None:
             <div class="metric-card">
                 <h3>Calibration</h3>
                 <h2>{metrics['calibration']:.2f} px/mm</h2>
+                <p>Pixels par mm</p>
             </div>
             """, unsafe_allow_html=True)
+        
+        st.rerun()  # Forcer le rafraîchissement pour voir les nouveaux graphiques
+
+# ==================== TESTS RAPIDES ====================
+st.markdown("### 🧪 Tests Rapides pour Comparaison")
+
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    if st.button("🧪 Test Sec (0% eau, 5°)"):
+        # Simuler données réalistes
+        np.random.seed(42)
+        test_metrics = {
+            'krr': 0.055 + np.random.normal(0, 0.005),  # Van Wal typique
+            'v0': 180 + np.random.normal(0, 20),
+            'distance': 250 + np.random.normal(0, 30),
+            'calibration': 1.33
+        }
+        st.session_state.experiments['Test_Sec_0%'] = {
+            'name': 'Test_Sec_0%',
+            'water_content': 0.0,
+            'angle': 5.0,
+            'sphere_type': 'Solide',
+            'metrics': test_metrics,
+            'success_rate': 85.0
+        }
+        st.success("✅ Test sec ajouté!")
+        st.rerun()
+
+with col2:
+    if st.button("🧪 Test Humide (10% eau, 15°)"):
+        np.random.seed(123)
+        test_metrics = {
+            'krr': 0.072 + np.random.normal(0, 0.005),  # Plus élevé avec humidité
+            'v0': 160 + np.random.normal(0, 15),
+            'distance': 220 + np.random.normal(0, 25),
+            'calibration': 1.33
+        }
+        st.session_state.experiments['Test_Humide_10%'] = {
+            'name': 'Test_Humide_10%',
+            'water_content': 10.0,
+            'angle': 15.0,
+            'sphere_type': 'Solide',
+            'metrics': test_metrics,
+            'success_rate': 78.0
+        }
+        st.success("✅ Test humide ajouté!")
+        st.rerun()
+
+with col3:
+    if st.button("🧪 Test Angle Fort (5% eau, 30°)"):
+        np.random.seed(456)
+        test_metrics = {
+            'krr': 0.063 + np.random.normal(0, 0.006),  # Angle élevé
+            'v0': 220 + np.random.normal(0, 25),
+            'distance': 280 + np.random.normal(0, 35),
+            'calibration': 1.33
+        }
+        st.session_state.experiments['Test_Angle_30°'] = {
+            'name': 'Test_Angle_30°',
+            'water_content': 5.0,
+            'angle': 30.0,
+            'sphere_type': 'Solide',
+            'metrics': test_metrics,
+            'success_rate': 82.0
+        }
+        st.success("✅ Test angle fort ajouté!")
+        st.rerun()
 
 # ==================== TABLEAU RÉSULTATS ====================
 if st.session_state.experiments:
@@ -197,7 +272,7 @@ if st.session_state.experiments:
     st.dataframe(results_df, use_container_width=True)
     
     # Graphiques simples
-    if len(results) >= 2:
+    if len(results) >= 1:  # Changé de 2 à 1 pour voir graphiques avec 1 seule expérience
         st.markdown("## 📊 Graphiques de Comparaison Complets")
         
         # Préparer données
@@ -216,162 +291,222 @@ if st.session_state.experiments:
             })
         plot_df = pd.DataFrame(plot_data)
         
-        # === GRAPHIQUES PRINCIPAUX ===
-        st.markdown("### 🎯 Graphiques Principaux")
+        # === GRAPHIQUES PRINCIPAUX COMME AVANT ===
+        st.markdown("### 🎯 Graphiques Principaux - Style Ancien")
         
         col1, col2 = st.columns(2)
         
         with col1:
-            # Krr vs Humidité avec références Van Wal
+            # Krr vs Humidité - Style ancien avec sphères et courbe
             fig1 = px.scatter(plot_df, x='Humidité', y='Krr', 
-                            color='Angle', size='Success_Rate',
-                            hover_data=['Expérience', 'V0', 'Distance'],
-                            title="📊 Krr vs Teneur en Eau", 
+                            color='Sphere_Type', size='Success_Rate',
+                            hover_data=['Expérience', 'V0', 'Distance', 'Angle'],
+                            title="💧 Coefficient Krr vs Teneur en Eau",
                             labels={'Krr': 'Coefficient Krr', 'Humidité': 'Teneur en Eau (%)'})
             
             # Ajouter lignes de référence Van Wal
             fig1.add_hline(y=0.052, line_dash="dash", line_color="red", annotation_text="Van Wal min: 0.052")
             fig1.add_hline(y=0.066, line_dash="dash", line_color="red", annotation_text="Van Wal max: 0.066")
             
-            # Ajouter ligne de tendance
+            # Ajouter courbe de tendance polynomiale (quadratique)
             if len(plot_df) >= 3:
+                try:
+                    # Tendance quadratique pour capturer l'optimum d'humidité
+                    z = np.polyfit(plot_df['Humidité'], plot_df['Krr'], min(2, len(plot_df)-1))
+                    p = np.poly1d(z)
+                    x_line = np.linspace(plot_df['Humidité'].min(), plot_df['Humidité'].max(), 100)
+                    fig1.add_trace(go.Scatter(x=x_line, y=p(x_line), mode='lines', 
+                                            name='Tendance Quadratique', 
+                                            line=dict(dash='dot', color='purple', width=3)))
+                except:
+                    pass
+            elif len(plot_df) == 2:
+                # Ligne droite pour 2 points
                 try:
                     z = np.polyfit(plot_df['Humidité'], plot_df['Krr'], 1)
                     p = np.poly1d(z)
                     x_line = np.linspace(plot_df['Humidité'].min(), plot_df['Humidité'].max(), 100)
                     fig1.add_trace(go.Scatter(x=x_line, y=p(x_line), mode='lines', 
-                                            name='Tendance', line=dict(dash='dot', color='purple', width=2)))
+                                            name='Tendance Linéaire', 
+                                            line=dict(dash='dot', color='purple', width=3)))
                 except:
                     pass
             
+            fig1.update_layout(height=500)
             st.plotly_chart(fig1, use_container_width=True)
             
         with col2:
-            # Krr vs Angle
+            # Krr vs Angle - Style ancien avec sphères et courbe
             fig2 = px.scatter(plot_df, x='Angle', y='Krr', 
                             color='Humidité', size='V0',
-                            hover_data=['Expérience', 'Distance'],
-                            title="📐 Krr vs Angle d'Inclinaison", 
+                            hover_data=['Expérience', 'Distance', 'Sphere_Type'],
+                            title="📐 Coefficient Krr vs Angle d'Inclinaison",
                             labels={'Krr': 'Coefficient Krr', 'Angle': 'Angle (°)'})
             
-            # Ajouter ligne de tendance
-            if len(plot_df) >= 3:
+            # Ajouter lignes de référence Van Wal
+            fig2.add_hline(y=0.052, line_dash="dash", line_color="red", annotation_text="Van Wal min")
+            fig2.add_hline(y=0.066, line_dash="dash", line_color="red", annotation_text="Van Wal max")
+            
+            # Ajouter courbe de tendance
+            if len(plot_df) >= 2:
                 try:
-                    z = np.polyfit(plot_df['Angle'], plot_df['Krr'], 1)
+                    z = np.polyfit(plot_df['Angle'], plot_df['Krr'], min(1, len(plot_df)-1))
                     p = np.poly1d(z)
                     x_line = np.linspace(plot_df['Angle'].min(), plot_df['Angle'].max(), 100)
                     fig2.add_trace(go.Scatter(x=x_line, y=p(x_line), mode='lines', 
-                                            name='Tendance', line=dict(dash='dot', color='orange', width=2)))
+                                            name='Tendance', 
+                                            line=dict(dash='dot', color='orange', width=3)))
                 except:
                     pass
             
+            fig2.update_layout(height=500)
             st.plotly_chart(fig2, use_container_width=True)
         
-        # === GRAPHIQUES SECONDAIRES ===
-        st.markdown("### 📈 Analyses Complémentaires")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # Vitesse vs Krr
-            fig3 = px.scatter(plot_df, x='V0', y='Krr',
-                            color='Humidité', size='Distance',
-                            hover_data=['Expérience', 'Angle'],
-                            title="🏃 Krr vs Vitesse Initiale",
-                            labels={'V0': 'Vitesse Initiale (mm/s)', 'Krr': 'Coefficient Krr'})
-            st.plotly_chart(fig3, use_container_width=True)
-            
-        with col2:
-            # Distance vs Success Rate
-            fig4 = px.scatter(plot_df, x='Distance', y='Success_Rate',
-                            color='Angle', size='Krr',
-                            hover_data=['Expérience', 'Humidité'],
-                            title="📏 Qualité Détection vs Distance",
-                            labels={'Distance': 'Distance (mm)', 'Success_Rate': 'Taux de Succès (%)'})
-            st.plotly_chart(fig4, use_container_width=True)
-        
         # === GRAPHIQUE COMPARATIF EN BARRES ===
-        st.markdown("### 📊 Comparaison Directe")
+        st.markdown("### 📊 Comparaison Directe - Tous Coefficients")
         
         fig_comparison = go.Figure()
         
-        # Barres Krr
+        # Barres Krr avec couleurs selon type de sphère
+        colors = ['lightblue' if stype == 'Solide' else 'lightcoral' for stype in plot_df['Sphere_Type']]
+        
         fig_comparison.add_trace(go.Bar(
-            x=plot_df['Expérience'],
+            x=[f"{row['Expérience']}\n({row['Humidité']}% eau, {row['Angle']}°)" for _, row in plot_df.iterrows()],
             y=plot_df['Krr'],
             name='Krr',
             text=[f"{val:.4f}" for val in plot_df['Krr']],
             textposition='auto',
-            marker_color='lightblue'
+            marker_color=colors,
+            hovertemplate='<b>%{x}</b><br>Krr: %{y:.6f}<extra></extra>'
         ))
         
-        # Ligne Van Wal moyenne
-        van_wal_mean = (0.052 + 0.066) / 2
-        fig_comparison.add_hline(y=van_wal_mean, line_dash="dash", line_color="red", 
-                               annotation_text=f"Van Wal moyen: {van_wal_mean:.3f}")
+        # Lignes de référence Van Wal
+        fig_comparison.add_hline(y=0.052, line_dash="dash", line_color="red", 
+                               annotation_text="Van Wal min: 0.052")
+        fig_comparison.add_hline(y=0.066, line_dash="dash", line_color="red", 
+                               annotation_text="Van Wal max: 0.066")
+        
+        # Ligne moyenne de tes expériences
+        mean_krr = plot_df['Krr'].mean()
+        fig_comparison.add_hline(y=mean_krr, line_dash="dot", line_color="green", 
+                               annotation_text=f"Moyenne expériences: {mean_krr:.4f}")
         
         fig_comparison.update_layout(
-            title="📊 Comparaison Krr - Toutes Expériences",
-            xaxis_title="Expériences",
+            title="📊 Comparaison Krr - Toutes Expériences avec Références",
+            xaxis_title="Expériences (conditions)",
             yaxis_title="Coefficient Krr",
-            height=500,
-            xaxis_tickangle=-45
+            height=600,
+            xaxis_tickangle=-45,
+            showlegend=False
         )
         
         st.plotly_chart(fig_comparison, use_container_width=True)
         
-        # === MATRICE DE CORRÉLATION ===
-        st.markdown("### 🔗 Analyse de Corrélation")
-        
-        # Sélectionner colonnes numériques
-        corr_cols = ['Humidité', 'Angle', 'Krr', 'V0', 'Distance', 'Success_Rate']
-        corr_data = plot_df[corr_cols]
-        
-        if len(corr_data) >= 3:
-            corr_matrix = corr_data.corr()
+        # === ANALYSE DES TENDANCES ===
+        if len(plot_df) >= 2:
+            st.markdown("### 🔍 Analyse des Tendances")
             
-            fig_corr = px.imshow(corr_matrix, 
-                               text_auto=True, 
-                               aspect="auto",
-                               title="🔗 Matrice de Corrélation",
-                               color_continuous_scale="RdBu_r",
-                               zmin=-1, zmax=1)
-            fig_corr.update_layout(height=500)
-            st.plotly_chart(fig_corr, use_container_width=True)
+            col1, col2, col3 = st.columns(3)
             
-            # Top corrélations
-            st.markdown("#### 🎯 Corrélations les Plus Fortes")
-            mask = np.triu(np.ones_like(corr_matrix, dtype=bool), k=1)
-            corr_values = corr_matrix.where(mask).stack().reset_index()
-            corr_values.columns = ['Variable1', 'Variable2', 'Corrélation']
-            corr_values = corr_values.sort_values('Corrélation', key=abs, ascending=False)
+            with col1:
+                # Effet humidité
+                if plot_df['Humidité'].nunique() > 1:
+                    humid_krr_corr = plot_df[['Humidité', 'Krr']].corr().iloc[0, 1]
+                    st.metric("Corrélation Humidité ↔ Krr", f"{humid_krr_corr:.3f}")
+                    
+                    if humid_krr_corr > 0.5:
+                        st.success("📈 Krr augmente avec l'humidité")
+                    elif humid_krr_corr < -0.5:
+                        st.info("📉 Krr diminue avec l'humidité")
+                    else:
+                        st.warning("➡️ Peu d'effet de l'humidité")
+                else:
+                    st.info("Une seule valeur d'humidité")
             
-            for i, row in corr_values.head(3).iterrows():
-                strength = "Forte" if abs(row['Corrélation']) > 0.7 else "Modérée" if abs(row['Corrélation']) > 0.4 else "Faible"
-                direction = "positive" if row['Corrélation'] > 0 else "négative"
-                color = "🔴" if abs(row['Corrélation']) > 0.7 else "🟠" if abs(row['Corrélation']) > 0.4 else "🟡"
+            with col2:
+                # Effet angle
+                if plot_df['Angle'].nunique() > 1:
+                    angle_krr_corr = plot_df[['Angle', 'Krr']].corr().iloc[0, 1]
+                    st.metric("Corrélation Angle ↔ Krr", f"{angle_krr_corr:.3f}")
+                    
+                    if abs(angle_krr_corr) > 0.7:
+                        direction = "augmente" if angle_krr_corr > 0 else "diminue"
+                        st.warning(f"⚠️ Krr {direction} fortement avec l'angle")
+                    else:
+                        st.success("✅ Krr indépendant de l'angle (Van Wal)")
+                else:
+                    st.info("Un seul angle testé")
+            
+            with col3:
+                # Comparaison Van Wal
+                krr_values = plot_df['Krr'].values
+                van_wal_range = [0.052, 0.066]
+                in_range = np.sum((krr_values >= van_wal_range[0]) & (krr_values <= van_wal_range[1]))
+                total = len(krr_values)
                 
-                st.markdown(f"{color} **{strength} corrélation {direction}** : {row['Variable1']} ↔ {row['Variable2']} (r = {row['Corrélation']:.3f})")
+                st.metric("Dans plage Van Wal", f"{in_range}/{total}")
+                
+                if in_range / total > 0.7:
+                    st.success("✅ Cohérent avec littérature")
+                elif in_range / total > 0.3:
+                    st.warning("⚠️ Partiellement cohérent")
+                else:
+                    st.error("❌ Écart significatif")
         
-        # === ANALYSE AUTOMATIQUE ===
-        st.markdown("### 🧠 Insights Automatiques")
+        # === RECOMMANDATIONS ===
+        st.markdown("### 💡 Recommandations pour Nouveaux Tests")
         
-        insights = []
+        recommendations = []
         
-        # Effet humidité
-        if len(plot_df) >= 3:
-            humid_krr_corr = plot_df[['Humidité', 'Krr']].corr().iloc[0, 1]
-            if humid_krr_corr > 0.5:
-                insights.append("💧 **Effet humidité positif** : L'humidité augmente la résistance au roulement")
-            elif humid_krr_corr < -0.3:
-                insights.append("💧 **Effet lubrification** : L'humidité réduit la résistance")
-            else:
-                insights.append("💧 **Effet humidité faible** : Impact minimal dans cette gamme")
+        # Analyse couverture
+        humidity_values = sorted(plot_df['Humidité'].unique())
+        angle_values = sorted(plot_df['Angle'].unique())
         
-        # Effet angle
-        if len(plot_df) >= 3:
-            angle_krr_corr = plot_df[['Angle', 'Krr']].corr().iloc[0, 1]
-            if abs(angle_krr_corr) > 0.6:
+        if len(humidity_values) < 4:
+            recommendations.append(f"💧 **Tester plus d'humidités** : Actuellement {humidity_values}% - ajouter points intermédiaires")
+        
+        if len(angle_values) < 3:
+            recommendations.append(f"📐 **Varier les angles** : Actuellement {angle_values}° - tester 5°, 15°, 30°")
+        
+        # Recherche optimum humidité
+        if len(plot_df) >= 3 and plot_df['Humidité'].nunique() >= 3:
+            max_krr_idx = plot_df['Krr'].idxmax()
+            optimal_humidity = plot_df.loc[max_krr_idx, 'Humidité']
+            if 5 <= optimal_humidity <= 20:
+                recommendations.append(f"🎯 **Optimum détecté** : {optimal_humidity}% humidité - tester autour de cette valeur")
+        
+        # Validation répétabilité
+        if plot_df['Krr'].std() / plot_df['Krr'].mean() > 0.15:
+            recommendations.append("🔄 **Améliorer répétabilité** : Variation Krr élevée - répéter certaines conditions")
+        
+        if recommendations:
+            for rec in recommendations:
+                st.markdown(f"- {rec}")
+        else:
+            st.success("✅ **Bon plan expérimental** - continuer les mesures !")
+        
+        # === EXPORT ===
+        st.markdown("### 📥 Export Données Complètes")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            csv_data = results_df.to_csv(index=False)
+            st.download_button(
+                label="📋 Export Tableau Résultats",
+                data=csv_data,
+                file_name="resultats_krr_complet.csv",
+                mime="text/csv"
+            )
+        
+        with col2:
+            plot_csv = plot_df.to_csv(index=False)
+            st.download_button(
+                label="📊 Export Données Graphiques",
+                data=plot_csv,
+                file_name="donnees_pour_graphiques.csv",
+                mime="text/csv"
+            )0.6:
                 direction = "augmente" if angle_krr_corr > 0 else "diminue"
                 insights.append(f"📐 **Dépendance à l'angle** : Krr {direction} avec l'angle")
             else:
@@ -432,38 +567,9 @@ if st.session_state.experiments:
         else:
             st.success("✅ **Plan expérimental équilibré**")
         
-        # === EXPORT DONNÉES ===
-        st.markdown("### 📥 Export Données")
-        
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            csv_data = results_df.to_csv(index=False)
-            st.download_button(
-                label="📋 Export Tableau",
-                data=csv_data,
-                file_name="resultats_krr.csv",
-                mime="text/csv"
-            )
-        
-        with col2:
-            plot_csv = plot_df.to_csv(index=False)
-            st.download_button(
-                label="📊 Export Graphiques",
-                data=plot_csv,
-                file_name="donnees_graphiques.csv",
-                mime="text/csv"
-            )
-        
-        with col3:
-            if len(corr_data) >= 3:
-                corr_csv = corr_matrix.to_csv()
-                st.download_button(
-                    label="🔗 Export Corrélations",
-                    data=corr_csv,
-                    file_name="correlations.csv",
-                    mime="text/csv"
-                )
+    else:
+        st.info("📊 Ajoutez des expériences pour voir les graphiques de comparaison")
+        st.info("💡 Utilisez les boutons 'Test Rapide' ci-dessus pour ajouter des données d'exemple")
 
 # ==================== GESTION ====================
 if st.session_state.experiments:
