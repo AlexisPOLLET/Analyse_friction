@@ -122,25 +122,31 @@ st.markdown("## 📂 Chargement des Données")
 col1, col2 = st.columns(2)
 
 with col1:
-    exp_name = st.text_input("Nom expérience", value="Exp_Simple")
+    exp_name = st.text_input("Nom expérience", value=f"Exp_{len(st.session_state.experiments)+1}")
     water_content = st.number_input("Teneur en eau (%)", value=0.0, min_value=0.0, max_value=30.0)
     
 with col2:
     angle = st.number_input("Angle (°)", value=5.0, min_value=1.0, max_value=45.0)
     sphere_type = st.selectbox("Type sphère", ["Solide", "Creuse"])
 
-uploaded_file = st.file_uploader("Fichier CSV", type=['csv'])
+uploaded_file = st.file_uploader("Fichier CSV", type=['csv'], key=f"file_uploader_{len(st.session_state.experiments)}")
 
-if st.button("🚀 Analyser") and uploaded_file is not None:
+if st.button("🚀 Analyser et Ajouter à la Comparaison") and uploaded_file is not None:
+    # Vérifier si le nom existe déjà
+    if exp_name in st.session_state.experiments:
+        st.warning(f"⚠️ Expérience '{exp_name}' existe déjà. Changez le nom ou elle sera remplacée.")
+    
     exp_data = load_data_simple(uploaded_file, exp_name, water_content, angle, sphere_type)
     
     if exp_data:
+        # AJOUTER (pas remplacer) l'expérience
         st.session_state.experiments[exp_name] = exp_data
         metrics = exp_data['metrics']
         
-        st.success(f"✅ Expérience '{exp_name}' ajoutée!")
+        st.success(f"✅ Expérience '{exp_name}' AJOUTÉE à la comparaison!")
+        st.info(f"📊 Total expériences: {len(st.session_state.experiments)}")
         
-        # Affichage résultats
+        # Affichage résultats de la nouvelle expérience
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
@@ -182,6 +188,24 @@ if st.button("🚀 Analyser") and uploaded_file is not None:
             """, unsafe_allow_html=True)
         
         st.rerun()
+
+# ==================== AFFICHAGE EXPÉRIENCES ACTUELLES ====================
+if st.session_state.experiments:
+    st.markdown(f"### 📋 Expériences Chargées ({len(st.session_state.experiments)})")
+    
+    exp_summary = []
+    for name, exp in st.session_state.experiments.items():
+        exp_summary.append({
+            'Nom': name,
+            'Eau (%)': exp['water_content'],
+            'Angle (°)': exp['angle'],
+            'Type': exp['sphere_type'],
+            'Krr': f"{exp['metrics']['krr']:.6f}",
+            'Status': '✅' if 0.03 <= exp['metrics']['krr'] <= 0.15 else '⚠️'
+        })
+    
+    summary_df = pd.DataFrame(exp_summary)
+    st.dataframe(summary_df, use_container_width=True)
 
 # ==================== TESTS RAPIDES ====================
 st.markdown("### 🧪 Tests Rapides")
