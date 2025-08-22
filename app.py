@@ -79,8 +79,31 @@ def calculate_krr_corrected(df_valid, water_content, angle, sphere_type,
     if len(df_valid) < 10:
         return None
     
-    st.info(f"🔍 **DIAGNOSTIC CALCUL KRR**")
-    st.info(f"📊 Points de données : {len(df_valid)}")
+    # === DIAGNOSTIC DÉTAILLÉ DES DONNÉES ===
+    st.info(f"🔍 **DIAGNOSTIC DONNÉES DÉTAILLÉ**")
+    st.info(f"📊 Points totaux : {len(df_valid)} | Points nettoyés : {len(df_clean)}")
+    st.info(f"🎯 Zone utilisée : {start_idx} à {end_idx} ({len(df_clean)/total_points*100:.1f}% des données)")
+    
+    # Diagnostic des positions
+    x_range = x_m.max() - x_m.min()
+    y_range = y_m.max() - y_m.min()
+    st.info(f"📏 Mouvement X : {x_range*1000:.1f}mm | Y : {y_range*1000:.1f}mm")
+    
+    # Diagnostic qualité calibration
+    radius_variation = df_clean['Radius'].std()
+    st.info(f"🎯 Calibration : {pixels_per_mm:.2f} px/mm | Variation rayon: {radius_variation:.1f}px")
+    
+    if radius_variation > 5:
+        st.warning(f"⚠️ Forte variation du rayon détecté ({radius_variation:.1f}px) - possible problème de détection")
+    
+    # Diagnostic mouvement
+    if x_range < 0.01:  # Moins de 10mm de mouvement
+        st.error(f"❌ Mouvement X insuffisant : {x_range*1000:.1f}mm - impossible de calculer vitesse")
+        return None
+    
+    if total_distance < 0.005:  # Moins de 5mm
+        st.error(f"❌ Distance totale insuffisante : {total_distance*1000:.1f}mm")
+        return None
     
     # === PARAMÈTRES PHYSIQUES RÉALISTES ===
     dt = 1 / fps
@@ -144,36 +167,69 @@ def calculate_krr_corrected(df_valid, water_content, angle, sphere_type,
     
     st.info(f"📏 Distance totale : {total_distance*1000:.1f} mm")
     
-    # === CALCUL KRR SELON VAN WAL ===
+    # === CALCUL KRR AVEC VALIDATION STRICTE ===
     # Formule : Krr = (V₀² - Vf²) / (2 * g * L)
     
-    if total_distance > 0 and v0 > vf and (v0**2 - vf**2) > 0:
-        krr_calculated = (v0**2 - vf**2) / (2 * g * total_distance)
-        
-        st.info(f"🧮 Calcul Krr : ({v0:.4f}² - {vf:.4f}²) / (2 × {g} × {total_distance:.4f}) = {krr_calculated:.6f}")
-        
-        # === VALIDATION MOINS RESTRICTIVE POUR PRÉSERVER LA VRAIE VALEUR ===
-        if krr_calculated < 0:
-            st.error("❌ Krr négatif - sphère accélère au lieu de ralentir")
-            krr_final = 0.050  # Seul cas où on remplace
-        elif krr_calculated > 2.0:
-            st.warning(f"⚠️ Krr extrêmement élevé ({krr_calculated:.3f}) - probable erreur critique")
-            krr_final = 0.050 + (water_content * 0.002)  # Correction seulement si vraiment aberrant
-        else:
-            # ACCEPTER LA VALEUR CALCULÉE MÊME SI ÉLEVÉE
-            st.success(f"✅ Krr calculé : {krr_calculated:.6f}")
-            if krr_calculated > 0.15:
-                st.info(f"📊 Valeur élevée - possible effet humidité/conditions spécifiques")
-            krr_final = krr_calculated
-            
-    else:
-        st.error("❌ Impossible de calculer Krr - paramètres invalides")
-        st.error(f"   - Distance: {total_distance:.6f} m")
-        st.error(f"   - v0: {v0:.6f} m/s")
-        st.error(f"   - vf: {vf:.6f} m/s")
-        st.error(f"   - v0²-vf²: {v0**2 - vf**2:.6f}")
-        # PAS de valeur par défaut - retourner None pour diagnostic
+    # Validation conditions préalables
+    if total_distance <= 0:
+        st.error(f"❌ Distance nulle ou négative : {total_distance*1000:.3f}mm")
         return None
+    
+    if v0 <= 0:
+        st.error(f"❌ Vitesse initiale nulle ou négative : {v0*1000:.3f}mm/s")
+        return None
+    
+    if vf < 0:
+        st.error(f"❌ Vitesse finale négative : {vf*1000:.3f}mm/s")
+        return None
+    
+    if v0 <= vf:
+        st.error(f"❌ Vitesse finale ≥ initiale : V₀={v0*1000:.1f} ≤ Vf={vf*1000:.1f} mm/s")
+        st.error("   → Sphère accélère au lieu de ralentir !")
+        return None
+    
+    # Calcul du numérateur
+    velocity_diff_squared = v0**2 - vf**2
+    if velocity_diff_squared <= 0:
+        st.error(f"❌ (V₀² - Vf²) ≤ 0 : {velocity_diff_squared:.6f}")
+        return None
+    
+    # Calcul Krr
+    krr_calculated = velocity_diff_squared / (2 * g * total_distance)
+    
+    st.info(f"🧮 **DÉTAIL CALCUL KRR :**")
+    st.info(f"   V₀² = {v0:.4f}² = {v0**2:.6f} m²/s²")
+    st.info(f"   Vf² = {vf:.4f}² = {vf**2:.6f} m²/s²")
+    st.info(f"   V₀² - Vf² = {velocity_diff_squared:.6f} m²/s²")
+    st.info(f"   2gL = 2 × {g} × {total_distance:.4f} = {2 * g * total_distance:.6f}")
+    st.info(f"   **Krr = {velocity_diff_squared:.6f} / {2 * g * total_distance:.6f} = {krr_calculated:.6f}**")
+    
+    # === VALIDATION RÉSULTAT ===
+    if krr_calculated < 0:
+        st.error("❌ Krr négatif - erreur de calcul")
+        return None
+    elif krr_calculated > 2.0:
+        st.error(f"❌ Krr extrêmement élevé ({krr_calculated:.3f}) - données probablement corrompues")
+        st.error("   Causes possibles :")
+        st.error("   - Distance trop faible")
+        st.error("   - Vitesses mal calculées") 
+        st.error("   - Calibration incorrecte")
+        return None
+    elif krr_calculated > 0.5:
+        st.warning(f"⚠️ Krr très élevé ({krr_calculated:.6f}) - vérifiez :")
+        st.warning("   - Calibration camera")
+        st.warning("   - Qualité des données")
+        st.warning("   - Conditions expérimentales")
+        krr_final = krr_calculated  # On garde quand même
+    elif krr_calculated > 0.2:
+        st.warning(f"⚠️ Krr élevé ({krr_calculated:.6f}) - au-dessus littérature Van Wal")
+        st.info("   Possible avec substrat très résistant ou humidité")
+        krr_final = krr_calculated
+    else:
+        st.success(f"✅ Krr calculé : {krr_calculated:.6f}")
+        if 0.03 <= krr_calculated <= 0.15:
+            st.success("🎯 Valeur cohérente avec la littérature")
+        krr_final = krr_calculated
     
     # === AUTRES MÉTRIQUES ===
     acceleration = np.gradient(v_magnitude, dt)
@@ -209,14 +265,37 @@ def calculate_krr_corrected(df_valid, water_content, angle, sphere_type,
         mu_energetic = 0
     
     # === DIAGNOSTIC FINAL ===
-    st.success(f"✅ **KRR FINAL : {krr_final:.6f}**")
+    st.success(f"✅ **KRR FINAL VALIDÉ : {krr_final:.6f}**")
     
-    if 0.03 <= krr_final <= 0.15:
-        st.success("🎯 Valeur dans la plage littérature (Van Wal: 0.052-0.066)")
-    elif krr_final < 0.03:
-        st.info("📊 Valeur faible mais physiquement possible")
+    # Classification de la valeur
+    if krr_final < 0.03:
+        classification = "Très faible (surface très lisse)"
+    elif krr_final <= 0.07:
+        classification = "Normal selon Van Wal (2017)"
+    elif krr_final <= 0.15:
+        classification = "Élevé mais physiquement plausible"
+    elif krr_final <= 0.5:
+        classification = "Très élevé - vérifier conditions"
     else:
-        st.warning("📊 Valeur élevée - possiblement due à l'humidité")
+        classification = "Extrême - probable erreur"
+    
+    st.info(f"📊 **Classification :** {classification}")
+    
+    # Comparaison littérature
+    van_wal_range = (0.052, 0.066)
+    if van_wal_range[0] <= krr_final <= van_wal_range[1]:
+        st.success(f"✅ Dans la plage Van Wal : {van_wal_range[0]:.3f} - {van_wal_range[1]:.3f}")
+    else:
+        deviation = min(abs(krr_final - van_wal_range[0]), abs(krr_final - van_wal_range[1]))
+        st.info(f"📊 Écart Van Wal : ±{deviation:.6f}")
+    
+    # Facteurs possibles si valeur élevée
+    if krr_final > 0.1:
+        st.info("🔍 **Facteurs possibles pour valeur élevée :**")
+        st.info("   • Humidité élevée (cohésion capillaire)")
+        st.info("   • Substrat très résistant")
+        st.info("   • Pénétration dans le substrat")
+        st.info("   • Calibration camera incorrecte")
     
     return {
         # Métriques principales
