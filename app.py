@@ -90,16 +90,18 @@ def calculate_krr_corrected(df_valid, water_content, angle, sphere_type,
     avg_radius_px = df_valid['Radius'].mean()
     pixels_per_mm = avg_radius_px / sphere_radius_mm
     
-    # === SÉLECTION ZONE STABLE (CŒUR 50% CENTRAL) ===
+    # === SÉLECTION ZONE STABLE (NETTOYAGE MINIMAL) ===
     total_points = len(df_valid)
-    start_idx = int(total_points * 0.25)  # Supprimer 25% début
-    end_idx = int(total_points * 0.75)    # Supprimer 25% fin
+    # CORRECTION : Retirer seulement 10-15% total au lieu de 50%
+    start_idx = int(total_points * 0.05)  # Supprimer seulement 5% début
+    end_idx = int(total_points * 0.95)    # Supprimer seulement 5% fin
     
-    # Garder au minimum 20 points centraux
-    if (end_idx - start_idx) < 20:
-        center = total_points // 2
-        start_idx = max(0, center - 10)
-        end_idx = min(total_points, center + 10)
+    # Garder au minimum 80% des points originaux
+    if (end_idx - start_idx) < int(total_points * 0.8):
+        # Si pas assez de points, prendre 90% centraux
+        margin = int(total_points * 0.05)
+        start_idx = margin
+        end_idx = total_points - margin
     
     df_clean = df_valid.iloc[start_idx:end_idx].reset_index(drop=True)
     
