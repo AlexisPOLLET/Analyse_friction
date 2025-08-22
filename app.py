@@ -634,28 +634,114 @@ with st.expander("➕ Ajouter une nouvelle expérience", expanded=True):
     )
     
     if st.button("🚀 Analyser et ajouter l'expérience") and uploaded_file is not None:
+        # DIAGNOSTIC DE CALIBRATION AVANT CALCUL
+        st.markdown("### 🔍 Diagnostic de Calibration")
+        
+        # Charger et analyser le fichier d'abord
+        try:
+            df = pd.read_csv(uploaded_file)
+            df_valid = df[(df['X_center'] != 0) & (df['Y_center'] != 0) & (df['Radius'] != 0)]
+            
+            if len(df_valid) > 0:
+                avg_radius_px = df_valid['Radius'].mean()
+                auto_calibration = avg_radius_px / sphere_radius
+                
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    st.markdown(f"""
+                    **📊 Données détectées :**
+                    - Rayon moyen : {avg_radius_px:.1f} px
+                    - Points valides : {len(df_valid)}/{len(df)}
+                    """)
+                
+                with col2:
+                    st.markdown(f"""
+                    **⚙️ Paramètres saisis :**
+                    - Rayon sphère : {sphere_radius:.1f} mm
+                    - Masse : {sphere_mass:.1f} g
+                    """)
+                
+                with col3:
+                    st.markdown(f"""
+                    **🎯 Calibration calculée :**
+                    - Auto : {auto_calibration:.2f} px/mm
+                    """)
+                
+                # ALERTE SI CALIBRATION ABERRANTE
+                if auto_calibration < 1.0 or auto_calibration > 20.0:
+                    st.error(f"""
+                    ⚠️ **CALIBRATION ABERRANTE !**
+                    
+                    Calibration calculée : {auto_calibration:.2f} px/mm
+                    
+                    **Problèmes possibles :**
+                    - Rayon sphère incorrect ({sphere_radius:.1f}mm)
+                    - Détection de rayon incorrecte ({avg_radius_px:.1f}px)
+                    
+                    **Solutions :**
+                    1. Vérifiez le rayon réel de votre sphère
+                    2. Utilisez les valeurs par défaut (15mm, 10g)
+                    """)
+                    
+                    # Proposer correction automatique
+                    if st.button("🔧 Utiliser paramètres par défaut (15mm, 10g)"):
+                        sphere_radius = 15.0
+                        sphere_mass = 10.0
+                        auto_calibration = avg_radius_px / 15.0
+                        st.success(f"✅ Correction appliquée ! Nouvelle calibration : {auto_calibration:.2f} px/mm")
+                        st.rerun()
+                else:
+                    st.success(f"✅ Calibration semble correcte : {auto_calibration:.2f} px/mm")
+        
+        except Exception as e:
+            st.error(f"❌ Erreur lecture fichier : {str(e)}")
+            return
+        
+        # CALCUL AVEC CALIBRATION CORRIGÉE
         exp_data = load_experiment_data(uploaded_file, exp_name, water_content, angle, sphere_type)
         
         if exp_data:
             st.session_state.experiments_data[exp_name] = exp_data
             st.success(f"✅ Expérience '{exp_name}' ajoutée avec succès!")
             
-            # Affichage immédiat des résultats
+            # Affichage immédiat des résultats avec diagnostic
             metrics = exp_data['metrics']
             
-            st.markdown("### 📊 Résultats Immédiats")
+            st.markdown("### 📊 Résultats avec Diagnostic")
             
             col1, col2, col3, col4 = st.columns(4)
             
             with col1:
                 krr_val = safe_format_value(metrics.get('Krr'))
+                krr_num = metrics.get('Krr')
+                
+                if krr_num and krr_num > 1.0:
+                    card_style = "error-card"
+                    status = "⚠️ ABERRANT"
+                elif krr_num and 0.03 <= krr_num <= 0.15:
+                    card_style = "krr-card"
+                    status = "✅ NORMAL"
+                else:
+                    card_style = "warning-card"
+                    status = "⚠️ ÉLEVÉ"
+                
                 st.markdown(f"""
-                <div class="krr-card">
+                <div class="{card_style}">
                     <h3>📊 Krr</h3>
                     <h2>{krr_val}</h2>
-                    <p>Coefficient principal</p>
+                    <p>{status}</p>
                 </div>
                 """, unsafe_allow_html=True)
+                
+                # Diagnostic Krr
+                if krr_num and krr_num > 0.5:
+                    st.error(f"""
+                    **Krr trop élevé !**
+                    - Attendu : 0.03-0.15
+                    - Calculé : {krr_num:.3f}
+                    - Cause probable : Calibration incorrecte
+                    """)
             
             with col2:
                 mu_kinetic_val = safe_format_value(metrics.get('mu_kinetic_avg'), "{:.4f}")
@@ -678,14 +764,19 @@ with st.expander("➕ Ajouter une nouvelle expérience", expanded=True):
                 """, unsafe_allow_html=True)
             
             with col4:
-                accel_val = safe_format_value(metrics.get('max_acceleration_mms2'), "{:.1f}")
+                calib_val = safe_format_value(metrics.get('calibration_px_per_mm'), "{:.2f}")
                 st.markdown(f"""
                 <div class="metric-card">
-                    <h3>🚀 Accel Max</h3>
-                    <h2>{accel_val} mm/s²</h2>
-                    <p>Accélération max</p>
+                    <h3>🎯 Calibration</h3>
+                    <h2>{calib_val} px/mm</h2>
+                    <p>Utilisée pour calcul</p>
                 </div>
                 """, unsafe_allow_html=True)
+            
+            # Diagnostic du nettoyage
+            if 'cleaning_aggressive' in metrics:
+                st.info(f"🧹 **Nettoyage appliqué :** {metrics['cleaning_aggressive']}")
+                st.info(f"📊 **Données conservées :** {metrics.get('percentage_kept', 0):.1f}% ({metrics.get('points_used', 0)}/{metrics.get('points_original', 0)} points)")
             
             st.rerun()
 
