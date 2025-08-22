@@ -598,28 +598,3 @@ st.markdown("""
 - Pas de bugs !
 """)
 
-# ==================== ALTERNATIVES IA ====================
-st.markdown("---")
-st.markdown("""
-### 🤖 Alternatives IA pour le Code
-Si cette interface ne te convient pas, voici d'autres IA spécialisées :
-
-**Pour le Code Python/Streamlit :**
-- **GitHub Copilot** : Excellent pour compléter du code
-- **Cursor.sh** : IDE avec IA intégrée, très bon pour débugger
-- **Replit Ghostwriter** : IA dédiée au code, interface simple
-- **CodeWhisperer (Amazon)** : Bon pour les scripts scientifiques
-- **Tabnine** : IA de complétion de code
-
-**Pour l'Analyse Scientifique :**
-- **Perplexity** : Excellent pour rechercher des formules/méthodes
-- **Notion AI** : Bon pour organiser et analyser des données
-- **ChatGPT Code Interpreter** : Plugin spécialisé analyse de données
-
-**IDE avec IA :**
-- **VS Code + GitHub Copilot** : Combinaison très puissante
-- **PyCharm + Tabnine** : Spécialisé Python scientifique
-- **Jupyter + Kite** : Pour analyse interactive
-
-Tu peux aussi essayer **Google Colab** avec ses nouvelles fonctions IA !
-""")
