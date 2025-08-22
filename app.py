@@ -153,9 +153,25 @@ def calculate_krr_advanced(df_valid, fps=250, sphere_mass_g=10.0, sphere_radius_
     theoretical_decel = g * (np.sin(angle_rad) + krr * np.cos(angle_rad))
     decel_ratio = deceleration_rate / theoretical_decel if theoretical_decel > 0 else 0
     
-    # 10. Coefficient de friction cinétique
-    F_normal = mass_kg * g * np.cos(angle_rad)
-    mu_kinetic = F_resistance_avg / F_normal if F_normal > 0 else 0
+    # 11. Velocity Rolling (condition de roulement sans glissement)
+    # v_CM = R × ω pour un roulement parfait
+    radius_m = sphere_radius_mm / 1000
+    omega_theoretical = v_magnitude / radius_m  # vitesse angulaire théorique
+    omega_avg = np.mean(omega_theoretical)
+    
+    # Vérification condition roulement sans glissement
+    rolling_condition = np.mean(v_magnitude) / (radius_m * omega_avg) if omega_avg > 0 else 0
+    rolling_quality = abs(1 - rolling_condition) * 100  # % d'écart par rapport au roulement parfait
+    
+    # Classification qualité roulement
+    if rolling_quality < 5:
+        rolling_status = "Excellent"
+    elif rolling_quality < 15:
+        rolling_status = "Bon"
+    elif rolling_quality < 30:
+        rolling_status = "Moyen"
+    else:
+        rolling_status = "Glissement"
     
     return {
         # Métriques de base
@@ -176,6 +192,9 @@ def calculate_krr_advanced(df_valid, fps=250, sphere_mass_g=10.0, sphere_radius_
         'vertical_deviation_mm': vertical_deviation,
         'velocity_cv': velocity_cv,
         'decel_ratio': decel_ratio,
+        'rolling_quality': rolling_quality,
+        'rolling_status': rolling_status,
+        'omega_avg': omega_avg,
         
         # Forces et énergies
         'F_resistance_avg_mN': F_resistance_avg * 1000,
@@ -327,7 +346,145 @@ if st.button("🚀 Analyser et Ajouter à la Comparaison") and uploaded_file is 
         st.rerun()
 
 # ==================== AFFICHAGE EXPÉRIENCES ACTUELLES ====================
+# ==================== ANALYSE OPTIONNELLE DES TRACES ====================
+st.markdown("### 📏 Analyse Optionnelle des Traces (si mesurées)")
+
+with st.expander("📐 Ajouter Mesures de Traces"):
+    st.markdown("Si tu as mesuré les traces laissées par la sphère, ajoute ces données pour une analyse plus complète :")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        trace_exp = st.selectbox("Expérience à compléter:", list(st.session_state.experiments.keys()) if st.session_state.experiments else ["Aucune"])
+    
+    with col2:
+        groove_depth = st.number_input("Profondeur trace (mm)", value=0.0, min_value=0.0, max_value=10.0, step=0.1)
+        groove_width = st.number_input("Largeur trace (mm)", value=0.0, min_value=0.0, max_value=50.0, step=0.5)
+    
+    with col3:
+        groove_length = st.number_input("Longueur trace (mm)", value=0.0, min_value=0.0, max_value=500.0, step=5.0)
+        
+        if st.button("➕ Ajouter Mesures Trace") and trace_exp != "Aucune":
+            # Calculs avancés avec traces
+            if trace_exp in st.session_state.experiments:
+                exp = st.session_state.experiments[trace_exp]
+                sphere_radius = 15.0  # mm par défaut
+                
+                # Ratio pénétration (δ/R) - métrique clé de Van Wal
+                penetration_ratio = groove_depth / sphere_radius
+                
+                # Volume de substrat déplacé
+                groove_volume = groove_depth * groove_width * groove_length  # mm³
+                
+                # Énergie de déformation du substrat
+                # E_deformation ≈ ρ_substrat × g × Volume × profondeur_moyenne
+                substrate_density = 1500  # kg/m³ pour sable typique
+                E_deformation = substrate_density * 9.81 * (groove_volume * 1e-9) * (groove_depth * 1e-3)  # J
+                
+                # Ajouter aux métriques
+                exp['metrics']['groove_depth_mm'] = groove_depth
+                exp['metrics']['groove_width_mm'] = groove_width
+                exp['metrics']['groove_length_mm'] = groove_length
+                exp['metrics']['penetration_ratio'] = penetration_ratio
+                exp['metrics']['groove_volume_mm3'] = groove_volume
+                exp['metrics']['E_deformation_mJ'] = E_deformation * 1000
+                
+                # Classification selon Van Wal
+                if penetration_ratio < 0.03:
+                    regime = "No-plowing (Van Wal)"
+                elif penetration_ratio < 0.1:
+                    regime = "Transition"
+                else:
+                    regime = "Plowing (De Blasio)"
+                
+                exp['metrics']['regime'] = regime
+                
+                st.success(f"✅ Traces ajoutées pour {trace_exp}!")
+                st.success(f"📊 Ratio δ/R = {penetration_ratio:.3f} → Régime: {regime}")
+                st.success(f"🔋 Énergie déformation: {E_deformation*1000:.2f} mJ")
+                
+                st.rerun()
+
+# Affichage traces si disponibles
 if st.session_state.experiments:
+    traces_available = False
+    for exp_name, exp in st.session_state.experiments.items():
+        if 'groove_depth_mm' in exp['metrics']:
+            traces_available = True
+            break
+    
+    if traces_available:
+        st.markdown("### 📏 Analyse des Traces Mesurées")
+        
+        trace_data = []
+        for exp_name, exp in st.session_state.experiments.items():
+            if 'groove_depth_mm' in exp['metrics']:
+                trace_data.append({
+                    'Expérience': exp_name,
+                    'Humidité': exp['water_content'],
+                    'Angle': exp['angle'],
+                    'Krr': exp['metrics']['krr'],
+                    'Profondeur (mm)': exp['metrics']['groove_depth_mm'],
+                    'Largeur (mm)': exp['metrics']['groove_width_mm'],
+                    'Ratio δ/R': exp['metrics']['penetration_ratio'],
+                    'Volume (mm³)': exp['metrics']['groove_volume_mm3'],
+                    'E_déformation (mJ)': exp['metrics']['E_deformation_mJ'],
+                    'Régime': exp['metrics']['regime']
+                })
+        
+        if trace_data:
+            trace_df = pd.DataFrame(trace_data)
+            st.dataframe(trace_df, use_container_width=True)
+            
+            # Graphiques traces
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Ratio δ/R vs Krr (validation Van Wal)
+                fig_penetration = px.scatter(trace_df, x='Ratio δ/R', y='Krr',
+                                           color='Régime', size='Humidité',
+                                           hover_data=['Expérience'],
+                                           title="📐 Ratio Pénétration vs Krr (Van Wal)",
+                                           labels={'Ratio δ/R': 'Ratio δ/R', 'Krr': 'Coefficient Krr'})
+                
+                # Ligne seuil no-plowing
+                fig_penetration.add_vline(x=0.03, line_dash="dash", line_color="red", 
+                                        annotation_text="Seuil No-plowing: 0.03")
+                fig_penetration.add_vline(x=0.1, line_dash="dash", line_color="orange", 
+                                        annotation_text="Seuil Plowing: 0.1")
+                
+                st.plotly_chart(fig_penetration, use_container_width=True)
+            
+            with col2:
+                # Énergie déformation vs humidité
+                fig_deformation = px.scatter(trace_df, x='Humidité', y='E_déformation (mJ)',
+                                           color='Angle', size='Volume (mm³)',
+                                           hover_data=['Expérience', 'Régime'],
+                                           title="🔋 Énergie Déformation vs Humidité",
+                                           labels={'E_déformation (mJ)': 'Énergie Déformation (mJ)'})
+                
+                st.plotly_chart(fig_deformation, use_container_width=True)
+            
+            # Insights traces
+            st.markdown("#### 🔍 Insights Traces")
+            
+            regime_counts = trace_df['Régime'].value_counts()
+            no_plowing = regime_counts.get('No-plowing (Van Wal)', 0)
+            total_traces = len(trace_df)
+            
+            if no_plowing / total_traces > 0.7:
+                st.success(f"✅ **Régime No-plowing dominant** : {no_plowing}/{total_traces} expériences validées Van Wal")
+            else:
+                st.warning(f"⚠️ **Régimes mixtes** : Seulement {no_plowing}/{total_traces} en no-plowing")
+            
+            # Corrélation pénétration-Krr
+            if len(trace_df) >= 3:
+                pen_krr_corr = trace_df[['Ratio δ/R', 'Krr']].corr().iloc[0, 1]
+                if pen_krr_corr > 0.6:
+                    st.info(f"📊 **Forte corrélation pénétration-Krr** : r = {pen_krr_corr:.3f}")
+                    st.info("   → Plus la résistance augmente, plus la pénétration augmente")
+                else:
+                    st.info(f"📊 **Corrélation pénétration-Krr modérée** : r = {pen_krr_corr:.3f}")
     st.markdown(f"### 📋 Expériences Chargées ({len(st.session_state.experiments)})")
     
     exp_summary = []
@@ -440,6 +597,9 @@ with col3:
             'vertical_deviation_mm': 4.2,
             'velocity_cv': 18.2,
             'decel_ratio': 0.92,
+            'rolling_quality': 8.3,
+            'rolling_status': "Bon",
+            'omega_avg': 12.5,
             'F_resistance_avg_mN': 3.12,
             'F_resistance_max_mN': 5.83,
             'E_dissipated_mJ': 22.1,
@@ -478,6 +638,8 @@ if st.session_state.experiments:
             'Qualité Traj (%)': f"{metrics.get('trajectory_linearity', 0):.1f}",
             'Énergie Dissipée (mJ)': f"{metrics.get('E_dissipated_mJ', 0):.2f}",
             'CV Vitesse (%)': f"{metrics.get('velocity_cv', 0):.1f}",
+            'Rolling Quality (%)': f"{metrics.get('rolling_quality', 0):.1f}",
+            'Rolling Status': metrics.get('rolling_status', 'N/A'),
             'Validation': '✅' if metrics.get('physics_valid', False) else '⚠️'
         })
     
@@ -514,6 +676,8 @@ if st.session_state.experiments:
                 st.metric("Linéarité Trajectoire", f"{metrics.get('trajectory_linearity', 0):.1f}%")
                 st.metric("Déviation Verticale", f"{metrics.get('vertical_deviation_mm', 0):.2f} mm")
                 st.metric("CV Vitesse", f"{metrics.get('velocity_cv', 0):.1f}%")
+                st.metric("Rolling Quality", f"{metrics.get('rolling_quality', 0):.1f}%")
+                st.metric("Rolling Status", metrics.get('rolling_status', 'N/A'))
                 
                 # Status de validation
                 if metrics.get('physics_valid', False):
@@ -531,6 +695,17 @@ if st.session_state.experiments:
                     st.success("✅ Trajectoire Linéaire")
                 else:
                     st.warning("⚠️ Trajectoire Courbée")
+                    
+                # Qualité du roulement
+                rolling_status = metrics.get('rolling_status', 'N/A')
+                if rolling_status == "Excellent":
+                    st.success("✅ Roulement Parfait")
+                elif rolling_status == "Bon":
+                    st.success("✅ Bon Roulement")
+                elif rolling_status == "Moyen":
+                    st.warning("⚠️ Roulement Moyen")
+                else:
+                    st.error("❌ Glissement Détecté")
 
 # ==================== GRAPHIQUES ====================
 if st.session_state.experiments:
@@ -644,7 +819,111 @@ if st.session_state.experiments:
             showlegend=False
         )
         
-        st.plotly_chart(fig_comparison, use_container_width=True)
+        # === GRAPHIQUES AVANCÉS FORCES ET ÉNERGIES ===
+        st.markdown("### ⚡ Graphiques Forces, Puissances et Énergies")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Forces de résistance vs conditions
+            fig_forces = px.scatter(plot_df, x='Humidité', y='F_resistance_avg_mN',
+                                  color='Angle', size='Krr',
+                                  hover_data=['Expérience', 'mu_kinetic'],
+                                  title="🔧 Force de Résistance vs Humidité",
+                                  labels={'F_resistance_avg_mN': 'Force Résistance (mN)', 'Humidité': 'Humidité (%)'})
+            
+            # Tendance
+            if len(plot_df) >= 2:
+                try:
+                    z = np.polyfit(plot_df['Humidité'], plot_df['F_resistance_avg_mN'], 1)
+                    p = np.poly1d(z)
+                    x_line = np.linspace(plot_df['Humidité'].min(), plot_df['Humidité'].max(), 100)
+                    fig_forces.add_trace(go.Scatter(x=x_line, y=p(x_line), mode='lines', 
+                                                  name='Tendance Forces', 
+                                                  line=dict(dash='dot', color='red', width=3)))
+                except:
+                    pass
+            
+            st.plotly_chart(fig_forces, use_container_width=True)
+            
+        with col2:
+            # Puissance dissipée
+            fig_power = px.scatter(plot_df, x='Angle', y='power_avg_mW',
+                                 color='Humidité', size='energy_efficiency',
+                                 hover_data=['Expérience', 'E_dissipated_mJ'],
+                                 title="⚡ Puissance Dissipée vs Angle",
+                                 labels={'power_avg_mW': 'Puissance (mW)', 'Angle': 'Angle (°)'})
+            
+            # Tendance
+            if len(plot_df) >= 2:
+                try:
+                    z = np.polyfit(plot_df['Angle'], plot_df['power_avg_mW'], 1)
+                    p = np.poly1d(z)
+                    x_line = np.linspace(plot_df['Angle'].min(), plot_df['Angle'].max(), 100)
+                    fig_power.add_trace(go.Scatter(x=x_line, y=p(x_line), mode='lines', 
+                                                 name='Tendance Puissance', 
+                                                 line=dict(dash='dot', color='orange', width=3)))
+                except:
+                    pass
+            
+            st.plotly_chart(fig_power, use_container_width=True)
+        
+        # === GRAPHIQUES EFFICACITÉS ===
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Efficacité énergétique
+            fig_efficiency = px.bar(plot_df, x='Expérience', y='energy_efficiency',
+                                  color='Humidité',
+                                  title="🔋 Efficacité Énergétique par Expérience",
+                                  labels={'energy_efficiency': 'Efficacité Énergétique (%)'})
+            fig_efficiency.update_xaxes(tickangle=-45)
+            st.plotly_chart(fig_efficiency, use_container_width=True)
+            
+        with col2:
+            # Qualité du roulement (Velocity Rolling)
+            rolling_data = []
+            for _, row in plot_df.iterrows():
+                rolling_quality = st.session_state.experiments[row['Expérience']]['metrics'].get('rolling_quality', 0)
+                rolling_status = st.session_state.experiments[row['Expérience']]['metrics'].get('rolling_status', 'N/A')
+                rolling_data.append({
+                    'Expérience': row['Expérience'],
+                    'Rolling_Quality': rolling_quality,
+                    'Rolling_Status': rolling_status,
+                    'Humidité': row['Humidité'],
+                    'Angle': row['Angle']
+                })
+            
+            rolling_df = pd.DataFrame(rolling_data)
+            
+            # Couleurs selon statut
+            color_map = {'Excellent': 'green', 'Bon': 'lightgreen', 'Moyen': 'orange', 'Glissement': 'red'}
+            colors = [color_map.get(status, 'gray') for status in rolling_df['Rolling_Status']]
+            
+            fig_rolling = go.Figure()
+            fig_rolling.add_trace(go.Bar(
+                x=rolling_df['Expérience'],
+                y=rolling_df['Rolling_Quality'],
+                name='Rolling Quality',
+                text=[f"{val:.1f}%" for val in rolling_df['Rolling_Quality']],
+                textposition='auto',
+                marker_color=colors,
+                hovertemplate='<b>%{x}</b><br>Qualité: %{y:.1f}%<br>Status: %{text}<extra></extra>',
+                text=[status for status in rolling_df['Rolling_Status']]
+            ))
+            
+            fig_rolling.update_layout(
+                title="🎯 Qualité du Roulement (Velocity Rolling)",
+                xaxis_title="Expériences",
+                yaxis_title="Écart Roulement Parfait (%)",
+                xaxis_tickangle=-45
+            )
+            
+            # Ligne qualité acceptable (< 15%)
+            fig_rolling.add_hline(y=15, line_dash="dash", line_color="red", 
+                                annotation_text="Seuil Acceptable: 15%")
+            
+            st.plotly_chart(fig_rolling, use_container_width=True)
         
         # === ANALYSE TENDANCES ===
         if len(plot_df) >= 2:
