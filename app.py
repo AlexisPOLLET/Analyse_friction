@@ -406,31 +406,43 @@ col1, col2, col3 = st.columns(3)
 
 with col1:
     if st.button("🧪 Test Réaliste 1: 10°, 0% eau"):
-        # GÉNÉRATION DE VALEURS VARIABLES RÉALISTES
-        base_krr = 0.052
-        variation = np.random.normal(0, 0.008)  # Variation réaliste ±0.008
-        krr_realistic = max(0.035, min(base_krr + variation, 0.080))
-        
-        # Vitesses variables selon Krr
+        # GÉNÉRATION DE VITESSES VARIABLES RÉALISTES D'ABORD
         v0_base = 145.3
-        v0_variation = np.random.normal(0, 15)  # ±15 mm/s
-        v0_realistic = max(120, v0_base + v0_variation)
+        v0_variation = np.random.normal(0, 20)  # ±20 mm/s de variation
+        v0_realistic = max(120, v0_base + v0_variation)  # mm/s
         
-        # Vf calculée pour donner le Krr voulu (approximativement)
-        distance_approx = 67.8 / 1000  # m
-        vf_calculated = np.sqrt(max(0, v0_realistic**2 - 2 * 9.81 * krr_realistic * distance_approx))
+        vf_base = 89.7
+        vf_variation = np.random.normal(0, 15)  # ±15 mm/s de variation  
+        vf_realistic = max(40, min(vf_base + vf_variation, v0_realistic * 0.8))  # mm/s
+        
+        # Distance variable
+        distance_base = 67.8
+        distance_variation = np.random.normal(0, 8)
+        distance_realistic = max(50, distance_base + distance_variation)  # mm
+        
+        # CALCUL KRR À PARTIR DES VITESSES (formule vraie)
+        v0_ms = v0_realistic / 1000  # Conversion mm/s -> m/s
+        vf_ms = vf_realistic / 1000  # Conversion mm/s -> m/s
+        L_m = distance_realistic / 1000  # Conversion mm -> m
+        g = 9.81
+        
+        # FORMULE VRAIE : Krr = (v₀² - vf²) / (2gL)
+        if L_m > 0 and v0_ms > vf_ms:
+            krr_calculated = (v0_ms**2 - vf_ms**2) / (2 * g * L_m)
+        else:
+            krr_calculated = 0.050  # Valeur de secours
         
         test_metrics = {
-            'Krr': krr_realistic,
-            'mu_effective': krr_realistic + np.tan(np.radians(10)),
-            'mu_kinetic': krr_realistic * 0.3 + np.random.normal(0, 0.002),
-            'mu_rolling': krr_realistic,
-            'mu_energetic': krr_realistic * 0.7 + np.random.normal(0, 0.003),
+            'Krr': krr_calculated,  # KRR CALCULÉ, PAS FIXÉ !
+            'mu_effective': krr_calculated + np.tan(np.radians(10)),
+            'mu_kinetic': krr_calculated * 0.3 + np.random.normal(0, 0.002),
+            'mu_rolling': krr_calculated,
+            'mu_energetic': krr_calculated * 0.7 + np.random.normal(0, 0.003),
             'v0_mms': v0_realistic,
-            'vf_mms': vf_calculated,
+            'vf_mms': vf_realistic,
             'max_velocity_mms': v0_realistic * 1.05,
             'max_acceleration_mms2': 200 + np.random.normal(0, 30),
-            'total_distance_mm': 67.8 + np.random.normal(0, 8),
+            'total_distance_mm': distance_realistic,
             'energy_efficiency_percent': 35 + np.random.normal(0, 5),
             'calibration_px_per_mm': 4.8 + np.random.normal(0, 0.3)
         }
@@ -442,36 +454,48 @@ with col1:
             'metrics': test_metrics,
             'success_rate': 85 + np.random.normal(0, 8)  # Taux variable
         }
-        st.success(f"✅ Test réaliste 1 ajouté! Krr = {krr_realistic:.6f} (variable)")
+        st.success(f"✅ Test 1: V₀={v0_realistic:.0f}mm/s, Vf={vf_realistic:.0f}mm/s → Krr={krr_calculated:.6f}")
         st.rerun()
 
 with col2:
     if st.button("🧪 Test Réaliste 2: 15°, 5% eau"):
-        # GÉNÉRATION DE VALEURS VARIABLES RÉALISTES  
-        base_krr = 0.063
-        variation = np.random.normal(0, 0.010)  # Variation plus forte avec humidité
-        krr_realistic = max(0.040, min(base_krr + variation, 0.090))
-        
-        # Vitesses variables
+        # GÉNÉRATION DE VITESSES VARIABLES RÉALISTES D'ABORD
         v0_base = 167.8
-        v0_variation = np.random.normal(0, 20)
-        v0_realistic = max(130, v0_base + v0_variation)
+        v0_variation = np.random.normal(0, 25)
+        v0_realistic = max(130, v0_base + v0_variation)  # mm/s
         
-        # Vf calculée pour cohérence
-        distance_approx = 54.2 / 1000
-        vf_calculated = np.sqrt(max(0, v0_realistic**2 - 2 * 9.81 * krr_realistic * distance_approx))
+        vf_base = 95.4
+        vf_variation = np.random.normal(0, 18)
+        vf_realistic = max(50, min(vf_base + vf_variation, v0_realistic * 0.75))  # mm/s
+        
+        # Distance variable
+        distance_base = 54.2
+        distance_variation = np.random.normal(0, 6)
+        distance_realistic = max(40, distance_base + distance_variation)  # mm
+        
+        # CALCUL KRR À PARTIR DES VITESSES (formule vraie)
+        v0_ms = v0_realistic / 1000
+        vf_ms = vf_realistic / 1000
+        L_m = distance_realistic / 1000
+        g = 9.81
+        
+        # FORMULE VRAIE : Krr = (v₀² - vf²) / (2gL)
+        if L_m > 0 and v0_ms > vf_ms:
+            krr_calculated = (v0_ms**2 - vf_ms**2) / (2 * g * L_m)
+        else:
+            krr_calculated = 0.060
         
         test_metrics = {
-            'Krr': krr_realistic,
-            'mu_effective': krr_realistic + np.tan(np.radians(15)),
-            'mu_kinetic': krr_realistic * 0.35 + np.random.normal(0, 0.003),
-            'mu_rolling': krr_realistic,
-            'mu_energetic': krr_realistic * 0.75 + np.random.normal(0, 0.004),
+            'Krr': krr_calculated,  # KRR CALCULÉ !
+            'mu_effective': krr_calculated + np.tan(np.radians(15)),
+            'mu_kinetic': krr_calculated * 0.35 + np.random.normal(0, 0.003),
+            'mu_rolling': krr_calculated,
+            'mu_energetic': krr_calculated * 0.75 + np.random.normal(0, 0.004),
             'v0_mms': v0_realistic,
-            'vf_mms': vf_calculated,
+            'vf_mms': vf_realistic,
             'max_velocity_mms': v0_realistic * 1.06,
             'max_acceleration_mms2': 250 + np.random.normal(0, 40),
-            'total_distance_mm': 54.2 + np.random.normal(0, 6),
+            'total_distance_mm': distance_realistic,
             'energy_efficiency_percent': 30 + np.random.normal(0, 4),
             'calibration_px_per_mm': 5.1 + np.random.normal(0, 0.4)
         }
@@ -483,36 +507,48 @@ with col2:
             'metrics': test_metrics,
             'success_rate': 82 + np.random.normal(0, 6)
         }
-        st.success(f"✅ Test réaliste 2 ajouté! Krr = {krr_realistic:.6f} (variable)")
+        st.success(f"✅ Test 2: V₀={v0_realistic:.0f}mm/s, Vf={vf_realistic:.0f}mm/s → Krr={krr_calculated:.6f}")
         st.rerun()
 
 with col3:
     if st.button("🧪 Test Réaliste 3: 20°, 10% eau"):
-        # GÉNÉRATION DE VALEURS VARIABLES RÉALISTES
-        base_krr = 0.074
-        variation = np.random.normal(0, 0.012)  # Variation maximale avec humidité
-        krr_realistic = max(0.045, min(base_krr + variation, 0.100))
-        
-        # Vitesses variables
+        # GÉNÉRATION DE VITESSES VARIABLES RÉALISTES D'ABORD
         v0_base = 189.2
-        v0_variation = np.random.normal(0, 25)
-        v0_realistic = max(150, v0_base + v0_variation)
+        v0_variation = np.random.normal(0, 30)
+        v0_realistic = max(150, v0_base + v0_variation)  # mm/s
         
-        # Vf calculée pour cohérence
-        distance_approx = 48.9 / 1000
-        vf_calculated = np.sqrt(max(0, v0_realistic**2 - 2 * 9.81 * krr_realistic * distance_approx))
+        vf_base = 108.6
+        vf_variation = np.random.normal(0, 20)
+        vf_realistic = max(60, min(vf_base + vf_variation, v0_realistic * 0.7))  # mm/s
+        
+        # Distance variable
+        distance_base = 48.9
+        distance_variation = np.random.normal(0, 5)
+        distance_realistic = max(35, distance_base + distance_variation)  # mm
+        
+        # CALCUL KRR À PARTIR DES VITESSES (formule vraie)
+        v0_ms = v0_realistic / 1000
+        vf_ms = vf_realistic / 1000
+        L_m = distance_realistic / 1000
+        g = 9.81
+        
+        # FORMULE VRAIE : Krr = (v₀² - vf²) / (2gL)
+        if L_m > 0 and v0_ms > vf_ms:
+            krr_calculated = (v0_ms**2 - vf_ms**2) / (2 * g * L_m)
+        else:
+            krr_calculated = 0.070
         
         test_metrics = {
-            'Krr': krr_realistic,
-            'mu_effective': krr_realistic + np.tan(np.radians(20)),
-            'mu_kinetic': krr_realistic * 0.4 + np.random.normal(0, 0.004),
-            'mu_rolling': krr_realistic,
-            'mu_energetic': krr_realistic * 0.8 + np.random.normal(0, 0.005),
+            'Krr': krr_calculated,  # KRR CALCULÉ !
+            'mu_effective': krr_calculated + np.tan(np.radians(20)),
+            'mu_kinetic': krr_calculated * 0.4 + np.random.normal(0, 0.004),
+            'mu_rolling': krr_calculated,
+            'mu_energetic': krr_calculated * 0.8 + np.random.normal(0, 0.005),
             'v0_mms': v0_realistic,
-            'vf_mms': vf_calculated,
+            'vf_mms': vf_realistic,
             'max_velocity_mms': v0_realistic * 1.04,
             'max_acceleration_mms2': 300 + np.random.normal(0, 50),
-            'total_distance_mm': 48.9 + np.random.normal(0, 5),
+            'total_distance_mm': distance_realistic,
             'energy_efficiency_percent': 28 + np.random.normal(0, 6),
             'calibration_px_per_mm': 4.9 + np.random.normal(0, 0.5)
         }
@@ -524,7 +560,7 @@ with col3:
             'metrics': test_metrics,
             'success_rate': 79 + np.random.normal(0, 7)
         }
-        st.success(f"✅ Test réaliste 3 ajouté! Krr = {krr_realistic:.6f} (variable)")
+        st.success(f"✅ Test 3: V₀={v0_realistic:.0f}mm/s, Vf={vf_realistic:.0f}mm/s → Krr={krr_calculated:.6f}")
         st.rerun()
 
 # === SECTION 3: TABLEAU DES EXPÉRIENCES ===
