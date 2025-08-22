@@ -99,13 +99,16 @@ def calculate_krr_advanced(df_valid, fps=250, sphere_mass_g=10.0, sphere_radius_
     # 2. Coefficient de friction effectif
     mu_effective = krr + np.tan(angle_rad)
     
-    # 3. Forces
+    # 3. Coefficient de friction cinétique (approximation)
+    mu_kinetic = krr  # Approximation simple
+    
+    # 4. Forces
     F_gravity_tangential = mass_kg * g * np.sin(angle_rad)
     F_resistance = mass_kg * np.abs(acceleration)
     F_resistance_avg = np.mean(F_resistance)
     F_resistance_max = np.max(F_resistance)
     
-    # 4. Énergies (translation + rotation)
+    # 5. Énergies (translation + rotation)
     j_factor = 2/5  # Sphère solide
     E_translational = 0.5 * mass_kg * v_magnitude**2
     E_rotational = 0.5 * (j_factor * mass_kg * radius_m**2) * (v_magnitude / radius_m)**2
@@ -115,15 +118,15 @@ def calculate_krr_advanced(df_valid, fps=250, sphere_mass_g=10.0, sphere_radius_
     E_final = E_total[-1] if len(E_total) > 0 else 0
     E_dissipated = E_initial - E_final
     
-    # 5. Efficacité énergétique
+    # 6. Efficacité énergétique
     energy_efficiency = (E_final / E_initial * 100) if E_initial > 0 else 0
     
-    # 6. Puissance dissipée
+    # 7. Puissance dissipée
     power_dissipated = F_resistance * v_magnitude  # Watts
     power_avg = np.mean(power_dissipated) * 1000  # mW
     power_max = np.max(power_dissipated) * 1000   # mW
     
-    # 7. Vitesse de décélération
+    # 8. Vitesse de décélération
     if len(v_magnitude) > 10:
         # Ajustement linéaire pour la décélération
         try:
@@ -134,7 +137,7 @@ def calculate_krr_advanced(df_valid, fps=250, sphere_mass_g=10.0, sphere_radius_
     else:
         deceleration_rate = 0
     
-    # 8. Qualité de la trajectoire (linéarité)
+    # 9. Qualité de la trajectoire (linéarité)
     if distance > 0:
         straight_distance = np.sqrt((x_m[-1] - x_m[0])**2 + (y_m[-1] - y_m[0])**2)
         trajectory_linearity = (straight_distance / distance * 100)  # %
@@ -145,7 +148,7 @@ def calculate_krr_advanced(df_valid, fps=250, sphere_mass_g=10.0, sphere_radius_
         trajectory_linearity = 0
         vertical_deviation = 0
     
-    # 9. Validation physique
+    # 10. Validation physique
     # Test indépendance vitesse (coefficient de variation des vitesses)
     velocity_cv = (np.std(v_magnitude) / np.mean(v_magnitude) * 100) if np.mean(v_magnitude) > 0 else 0
     
@@ -345,7 +348,6 @@ if st.button("🚀 Analyser et Ajouter à la Comparaison") and uploaded_file is 
         
         st.rerun()
 
-# ==================== AFFICHAGE EXPÉRIENCES ACTUELLES ====================
 # ==================== ANALYSE OPTIONNELLE DES TRACES ====================
 st.markdown("### 📏 Analyse Optionnelle des Traces (si mesurées)")
 
@@ -485,6 +487,9 @@ if st.session_state.experiments:
                     st.info("   → Plus la résistance augmente, plus la pénétration augmente")
                 else:
                     st.info(f"📊 **Corrélation pénétration-Krr modérée** : r = {pen_krr_corr:.3f}")
+
+# ==================== AFFICHAGE EXPÉRIENCES ACTUELLES ====================
+if st.session_state.experiments:
     st.markdown(f"### 📋 Expériences Chargées ({len(st.session_state.experiments)})")
     
     exp_summary = []
@@ -715,15 +720,19 @@ if st.session_state.experiments:
         # Préparer données
         plot_data = []
         for name, exp in st.session_state.experiments.items():
+            metrics = exp['metrics']
             plot_data.append({
                 'Expérience': name,
                 'Humidité': exp['water_content'],
                 'Angle': exp['angle'],
-                'Krr': exp['metrics']['krr'],
-                'V0': exp['metrics']['v0'],
-                'Distance': exp['metrics']['distance'],
+                'Krr': metrics['krr'],
+                'V0': metrics['v0'],
+                'Distance': metrics['distance'],
                 'Sphere_Type': exp['sphere_type'],
-                'Success_Rate': exp['success_rate']
+                'Success_Rate': exp['success_rate'],
+                'F_resistance_avg_mN': metrics.get('F_resistance_avg_mN', 0),
+                'power_avg_mW': metrics.get('power_avg_mW', 0),
+                'energy_efficiency': metrics.get('energy_efficiency', 0)
             })
         plot_df = pd.DataFrame(plot_data)
         
@@ -819,6 +828,8 @@ if st.session_state.experiments:
             showlegend=False
         )
         
+        st.plotly_chart(fig_comparison, use_container_width=True)
+        
         # === GRAPHIQUES AVANCÉS FORCES ET ÉNERGIES ===
         st.markdown("### ⚡ Graphiques Forces, Puissances et Énergies")
         
@@ -828,7 +839,7 @@ if st.session_state.experiments:
             # Forces de résistance vs conditions
             fig_forces = px.scatter(plot_df, x='Humidité', y='F_resistance_avg_mN',
                                   color='Angle', size='Krr',
-                                  hover_data=['Expérience', 'mu_kinetic'],
+                                  hover_data=['Expérience'],
                                   title="🔧 Force de Résistance vs Humidité",
                                   labels={'F_resistance_avg_mN': 'Force Résistance (mN)', 'Humidité': 'Humidité (%)'})
             
@@ -850,7 +861,7 @@ if st.session_state.experiments:
             # Puissance dissipée
             fig_power = px.scatter(plot_df, x='Angle', y='power_avg_mW',
                                  color='Humidité', size='energy_efficiency',
-                                 hover_data=['Expérience', 'E_dissipated_mJ'],
+                                 hover_data=['Expérience'],
                                  title="⚡ Puissance Dissipée vs Angle",
                                  labels={'power_avg_mW': 'Puissance (mW)', 'Angle': 'Angle (°)'})
             
@@ -908,8 +919,8 @@ if st.session_state.experiments:
                 text=[f"{val:.1f}%" for val in rolling_df['Rolling_Quality']],
                 textposition='auto',
                 marker_color=colors,
-                hovertemplate='<b>%{x}</b><br>Qualité: %{y:.1f}%<br>Status: %{text}<extra></extra>',
-                text=[status for status in rolling_df['Rolling_Status']]
+                hovertemplate='<b>%{x}</b><br>Qualité: %{y:.1f}%<br>Status: %{customdata}<extra></extra>',
+                customdata=rolling_df['Rolling_Status']  # CORRECTION: utiliser customdata au lieu de text répété
             ))
             
             fig_rolling.update_layout(
