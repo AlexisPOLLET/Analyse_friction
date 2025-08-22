@@ -105,6 +105,12 @@ def calculate_krr_corrected(df_valid, water_content, angle, sphere_type,
     
     df_clean = df_valid.iloc[start_idx:end_idx].reset_index(drop=True)
     
+    # === CONVERSION EN UNITÉS PHYSIQUES (AVANT DIAGNOSTIC) ===
+    x_mm = df_clean['X_center'].values / pixels_per_mm  # mm
+    y_mm = df_clean['Y_center'].values / pixels_per_mm  # mm
+    x_m = x_mm / 1000  # m
+    y_m = y_mm / 1000  # m
+    
     # === DIAGNOSTIC APPROFONDI DES DONNÉES ===
     st.warning("🔍 **DIAGNOSTIC APPROFONDI - RECHERCHE DE LA CAUSE DES VALEURS ABERRANTES**")
     
@@ -129,54 +135,40 @@ def calculate_krr_corrected(df_valid, water_content, angle, sphere_type,
         st.info(f"   **Calibration corrigée suggérée : {correct_pixels_per_mm:.2f} px/mm**")
         
         # Recalculer avec calibration corrigée
-        x_mm_corrected = df_clean['X_center'].values / correct_pixels_per_mm
-        y_mm_corrected = df_clean['Y_center'].values / correct_pixels_per_mm
-        x_m_corrected = x_mm_corrected / 1000
-        y_m_corrected = y_mm_corrected / 1000
+        x_mm = df_clean['X_center'].values / correct_pixels_per_mm
+        y_mm = df_clean['Y_center'].values / correct_pixels_per_mm
+        x_m = x_mm / 1000
+        y_m = y_mm / 1000
+        pixels_per_mm = correct_pixels_per_mm  # Mettre à jour la calibration
         
-        # Recalcul vitesses avec calibration corrigée
-        if window >= 3:
-            x_smooth_corr = np.convolve(x_m_corrected, np.ones(window)/window, mode='same')
-            y_smooth_corr = np.convolve(y_m_corrected, np.ones(window)/window, mode='same')
-        else:
-            x_smooth_corr = x_m_corrected
-            y_smooth_corr = y_m_corrected
-        
-        vx_corr = np.gradient(x_smooth_corr, dt)
-        vy_corr = np.gradient(y_smooth_corr, dt)
-        v_magnitude_corr = np.sqrt(vx_corr**2 + vy_corr**2)
-        
-        v0_corr = np.mean(v_magnitude_corr[:n_avg])
-        vf_corr = np.mean(v_magnitude_corr[-n_avg:])
-        
-        dx_corr = np.diff(x_smooth_corr)
-        dy_corr = np.diff(y_smooth_corr)
-        distances_corr = np.sqrt(dx_corr**2 + dy_corr**2)
-        total_distance_corr = np.sum(distances_corr)
-        
-        # Krr avec calibration corrigée
-        velocity_diff_squared_corr = v0_corr**2 - vf_corr**2
-        if velocity_diff_squared_corr > 0 and total_distance_corr > 0:
-            krr_calibration_corrected = velocity_diff_squared_corr / (2 * g * total_distance_corr)
-            st.success(f"✅ **Krr avec calibration corrigée : {krr_calibration_corrected:.6f}**")
-            
-            if 0.01 <= krr_calibration_corrected <= 0.2:
-                st.success("🎯 **PROBLÈME RÉSOLU !** La calibration était le problème !")
-                # Utiliser les valeurs corrigées
-                x_m, y_m = x_m_corrected, y_m_corrected
-                x_smooth, y_smooth = x_smooth_corr, y_smooth_corr
-                v_magnitude = v_magnitude_corr
-                v0, vf = v0_corr, vf_corr
-                total_distance = total_distance_corr
-                pixels_per_mm = correct_pixels_per_mm
-                krr_calculated = krr_calibration_corrected
-                method_used = "Calibration corrigée"
-            else:
-                st.warning(f"⚠️ Calibration corrigée donne encore Krr = {krr_calibration_corrected:.6f}")
-        else:
-            st.error("❌ Impossible de calculer Krr avec calibration corrigée")
+        st.success("✅ **Calibration automatiquement corrigée**")
     else:
         st.success(f"✅ Calibration acceptable : {calibration_error:.1f}% d'erreur")
+    
+    # === LISSAGE LÉGER (APRÈS CALIBRATION) ===
+    window = min(3, len(x_m) // 5)
+    if window >= 3:
+        x_smooth = np.convolve(x_m, np.ones(window)/window, mode='same')
+        y_smooth = np.convolve(y_m, np.ones(window)/window, mode='same')
+    else:
+        x_smooth = x_m
+        y_smooth = y_m
+    
+    # === CALCUL DES VITESSES ===
+    vx = np.gradient(x_smooth, dt)
+    vy = np.gradient(y_smooth, dt)
+    v_magnitude = np.sqrt(vx**2 + vy**2)
+    
+    # === VITESSES INITIALE ET FINALE (MOYENNÉES) ===
+    n_avg = max(3, len(v_magnitude) // 8)  # Moyenner sur plus de points
+    v0 = np.mean(v_magnitude[:n_avg])      # Vitesse initiale
+    vf = np.mean(v_magnitude[-n_avg:])     # Vitesse finale
+    
+    # === DISTANCE TOTALE ===
+    dx = np.diff(x_smooth)
+    dy = np.diff(y_smooth)
+    distances = np.sqrt(dx**2 + dy**2)
+    total_distance = np.sum(distances)  # en mètres
     
     # === VÉRIFICATION 2: DONNÉES DE MOUVEMENT ===
     st.info("**2️⃣ VÉRIFICATION MOUVEMENT**")
@@ -189,6 +181,7 @@ def calculate_krr_corrected(df_valid, water_content, angle, sphere_type,
     st.info(f"   Mouvement X : {x_movement*1000:.1f} mm")
     st.info(f"   Mouvement Y : {y_movement*1000:.1f} mm") 
     st.info(f"   Ratio Y/X : {movement_ratio:.3f}")
+    st.info(f"   Distance totale : {total_distance*1000:.1f} mm")
     
     if x_movement < 0.05:  # Moins de 50mm de mouvement horizontal
         st.error("❌ **MOUVEMENT HORIZONTAL INSUFFISANT**")
@@ -217,23 +210,27 @@ def calculate_krr_corrected(df_valid, water_content, angle, sphere_type,
     st.info(f"   Variation : {vitesse_variation:.1f}%")
     
     # Vérifier la décélération
-    deceleration_expected = (v0**2 - vf**2) / (2 * total_distance)  # m/s²
-    deceleration_gravity = g * np.sin(angle_rad)  # m/s²
-    deceleration_ratio = deceleration_expected / deceleration_gravity if deceleration_gravity > 0 else float('inf')
-    
-    st.info(f"   Décélération mesurée : {deceleration_expected:.3f} m/s²")
-    st.info(f"   Décélération gravité : {deceleration_gravity:.3f} m/s²")
-    st.info(f"   Ratio : {deceleration_ratio:.3f}")
-    
-    if deceleration_ratio > 10:
-        st.error(f"❌ **DÉCÉLÉRATION ABERRANTE** : {deceleration_ratio:.1f}x la gravité !")
-        st.error("   → Physiquement impossible")
-        st.error("   → Problème dans le calcul des vitesses")
+    if total_distance > 0 and v0 > vf:
+        deceleration_expected = (v0**2 - vf**2) / (2 * total_distance)  # m/s²
+        deceleration_gravity = g * np.sin(angle_rad)  # m/s²
+        deceleration_ratio = deceleration_expected / deceleration_gravity if deceleration_gravity > 0 else float('inf')
         
-    if vitesse_variation > 200:
-        st.warning(f"⚠️ **VITESSES TRÈS VARIABLES** : {vitesse_variation:.1f}% de variation")
-        st.warning("   → Possible bruit dans les données")
-        st.warning("   → Augmenter le lissage ?")
+        st.info(f"   Décélération mesurée : {deceleration_expected:.3f} m/s²")
+        st.info(f"   Décélération gravité : {deceleration_gravity:.3f} m/s²")
+        st.info(f"   Ratio : {deceleration_ratio:.3f}")
+        
+        if deceleration_ratio > 10:
+            st.error(f"❌ **DÉCÉLÉRATION ABERRANTE** : {deceleration_ratio:.1f}x la gravité !")
+            st.error("   → Physiquement impossible")
+            st.error("   → Problème dans le calcul des vitesses")
+            
+        if vitesse_variation > 200:
+            st.warning(f"⚠️ **VITESSES TRÈS VARIABLES** : {vitesse_variation:.1f}% de variation")
+            st.warning("   → Possible bruit dans les données")
+            st.warning("   → Augmenter le lissage ?")
+    else:
+        st.error("❌ Impossible de calculer la décélération (distance nulle ou vitesses incohérentes)")
+        return None
     
     # === VÉRIFICATION 4: COMPARAISON ORDRE DE GRANDEUR ===
     st.info("**4️⃣ COMPARAISON LITTÉRATURE**")
